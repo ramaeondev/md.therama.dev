@@ -1,4 +1,5 @@
-- [ ] Build local-first Markdown workspace UI and interactions.
-- [ ] Add IndexedDB persistence, starter workspace, import/export, and autosave.
-- [ ] Add AI assistant and provider settings UI without API calls.
-- [ ] Add metadata and behavior coverage; verify app and commit changes.
+- [x] Build the local-first workspace explorer and Markdown editing experience.
+- [x] Add IndexedDB persistence, starter workspace, import/export, and autosave.
+- [x] Add metadata and behavior coverage; verify app and commit changes.
+- Later milestone (out of scope): AI Provider Engine + BYOK.
+- Later milestone (out of scope): Workspace Intelligence (RAG).

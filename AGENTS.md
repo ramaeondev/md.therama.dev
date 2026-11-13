@@ -28,3 +28,7 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Workspace architecture
+- Keep workspace and document ownership browser-local through a `DocumentStorageAdapter` boundary; this foundation must not call cloud services, auth, or AI APIs so provider integrations remain replaceable.
+- Keep persistence, workspace state/operations, Markdown editing/rendering, and workspace presentation in separate feature modules to support independent evolution.
