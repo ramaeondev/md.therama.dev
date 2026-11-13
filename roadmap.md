@@ -1,0 +1,4 @@
+- [ ] Build local-first Markdown workspace UI and interactions.
+- [ ] Add IndexedDB persistence, starter workspace, import/export, and autosave.
+- [ ] Add AI assistant and provider settings UI without API calls.
+- [ ] Add metadata and behavior coverage; verify app and commit changes.
