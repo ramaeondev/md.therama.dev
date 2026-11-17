@@ -32,3 +32,4 @@ use the editor.
 ## Workspace architecture
 - Keep workspace and document ownership browser-local through a `DocumentStorageAdapter` boundary; this foundation must not call cloud services, auth, or AI APIs so provider integrations remain replaceable.
 - Keep persistence, workspace state/operations, Markdown editing/rendering, and workspace presentation in separate feature modules to support independent evolution.
+- Keep AI provider contracts and adapters in browser-safe feature modules behind a provider registry; BYOK credentials exist only in explicit in-memory provider sessions and are never persisted by adapters.

@@ -1,5 +1,7 @@
 - [x] Build the local-first workspace explorer and Markdown editing experience.
 - [x] Add IndexedDB persistence, starter workspace, import/export, and autosave.
 - [x] Add metadata and behavior coverage; verify app and commit changes.
-- Later milestone (out of scope): AI Provider Engine + BYOK.
+- [x] Milestone 2 Phase A: provider contracts, registry, and normalized errors.
+- [x] Milestone 2 Phase B: Gemini discovery, connection checks, text generation, and streaming.
+- Next: Milestone 2 Phase C, OpenAI integration; then provider settings, assistant chat, and persistence/security verification.
 - Later milestone (out of scope): Workspace Intelligence (RAG).
