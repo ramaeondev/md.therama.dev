@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeProviderError, ProviderError } from "./errors";
 import { geminiProvider } from "./gemini";
 import { ProviderRegistry } from "./registry";
-import type { AIProvider, ProviderRequest } from "./types";
+import type { ProviderRequest } from "./types";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -30,13 +30,14 @@ describe("AI provider foundation", () => {
     [401, "", "invalid_api_key"],
     [429, "RATE_LIMIT", "rate_limited"],
     [429, "RESOURCE_EXHAUSTED quota", "quota_exceeded"],
+    [undefined, "NETWORK_ERROR", "network_error"],
     [400, "input token limit exceeded", "context_length_exceeded"],
     [404, "", "unsupported_model"],
     [503, "", "provider_unavailable"],
   ] as const)("normalizes provider errors (%s)", (status, detail, expected) => {
     const error = normalizeProviderError("gemini", status, detail);
     expect(error.code).toBe(expected);
-    expect(error.message).not.toContain(detail);
+    if (detail) expect(error.message).not.toContain(detail);
   });
 
   it("keeps an empty API key out of a provider session", () => {
@@ -46,7 +47,7 @@ describe("AI provider foundation", () => {
   });
 
   it("discovers only generation-capable models and reports a successful connection", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
+    const fetchMock = vi.fn().mockImplementation(() =>
       jsonResponse({
         models: [
           { name: "models/gemini-test", displayName: "Gemini Test", inputTokenLimit: 8000, outputTokenLimit: 1000, supportedGenerationMethods: ["generateContent", "streamGenerateContent"] },
@@ -91,6 +92,12 @@ describe("AI provider foundation", () => {
     expect(body.generationConfig?.temperature).toBe(0.2);
   });
 
+  it("sends network failures through the normalized provider error contract", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const session = geminiProvider.initialize({ apiKey: "test-key" });
+    await expect(session.listModels()).rejects.toMatchObject({ code: "network_error", retryable: false });
+  });
+
   it("streams text from split server-sent event chunks", async () => {
     const encoded = new TextEncoder();
     const chunks = [
@@ -125,5 +132,3 @@ describe("AI provider foundation", () => {
     await expect(session.listModels()).rejects.not.toThrow("private-key-value");
   });
 });
-
-void ({} as AIProvider);

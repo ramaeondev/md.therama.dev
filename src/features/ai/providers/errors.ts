@@ -26,7 +26,7 @@ const userMessages: Record<ProviderErrorCode, string> = {
 };
 
 export class ProviderError extends Error {
-  readonly name = "ProviderError";
+  override readonly name = "ProviderError";
 
   constructor(
     readonly providerId: string,
@@ -53,6 +53,8 @@ export function normalizeProviderError(
     code = "quota_exceeded";
   } else if (statusCode === 429) {
     code = "rate_limited";
+  } else if (/network|fetch failed|connection/.test(codeText)) {
+    code = "network_error";
   } else if (/context|token limit|too many tokens|input is too long/.test(codeText)) {
     code = "context_length_exceeded";
   } else if (statusCode === 404 || /model.*(not found|unsupported|unavailable)/.test(codeText)) {

@@ -51,13 +51,12 @@ export const geminiProvider: AIProvider = {
 function createGeminiSession(apiKey: string): AIProviderSession {
   async function request(url: string, init: RequestInit = {}): Promise<Response> {
     try {
+      const headers = new Headers(init.headers);
+      headers.set("x-goog-api-key", apiKey);
+      if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
       const response = await fetch(url, {
         ...init,
-        headers: {
-          ...init.headers,
-          "x-goog-api-key": apiKey,
-          ...(init.body ? { "content-type": "application/json" } : {}),
-        },
+        headers,
       });
       if (!response.ok) throw await providerErrorFromResponse(response);
       return response;
@@ -73,7 +72,7 @@ function createGeminiSession(apiKey: string): AIProviderSession {
     do {
       const params = new URLSearchParams({ pageSize: "1000" });
       if (pageToken) params.set("pageToken", pageToken);
-      const response = await request(`${API_ROOT}/models?${params.toString()}`, { signal });
+      const response = await request(`${API_ROOT}/models?${params.toString()}`, { ...(signal && { signal }) });
       const payload = (await response.json()) as {
         models?: GeminiModelPayload[];
         nextPageToken?: string;
@@ -116,7 +115,7 @@ function createGeminiSession(apiKey: string): AIProviderSession {
     const response = await request(`${API_ROOT}/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       body: JSON.stringify(body),
-      signal: input.signal,
+      ...(input.signal && { signal: input.signal }),
     });
     const payload = (await response.json()) as GeminiResponsePayload;
     const usage = normalizeUsage(payload.usageMetadata);
@@ -134,7 +133,7 @@ function createGeminiSession(apiKey: string): AIProviderSession {
     try {
       response = await request(
         `${API_ROOT}/models/${encodeURIComponent(model)}:streamGenerateContent?${params.toString()}`,
-        { method: "POST", body: JSON.stringify(createRequestBody(input)), signal: input.signal },
+        { method: "POST", body: JSON.stringify(createRequestBody(input)), ...(input.signal && { signal: input.signal }) },
       );
     } catch (error) {
       if (error instanceof ProviderError && error.code === "network_error") {
