@@ -62,7 +62,7 @@ def add(a, b) {\n  return a + b;\n}\n\n## What comes next\n\nYour workspace is r
     openDocumentIds: ["doc-welcome"],
     activeDocumentId: "doc-welcome",
     recentDocumentIds: ["doc-welcome"],
-    preferences: { theme: "dark", fontSize: 14, wordWrap: true, autoSaveDelay: 700 },
+    preferences: { theme: "dark", fontSize: 14, wordWrap: true, autoSaveDelay: 700, aiProviderId: null, aiModelId: null },
   };
 }
 

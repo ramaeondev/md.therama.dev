@@ -25,6 +25,8 @@ export type WorkspacePreferences = {
   fontSize: number;
   wordWrap: boolean;
   autoSaveDelay: number;
+  aiProviderId: "gemini" | null;
+  aiModelId: string | null;
 };
 
 export type WorkspaceState = {
