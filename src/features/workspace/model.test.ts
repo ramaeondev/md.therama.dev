@@ -44,12 +44,16 @@ describe("local workspace foundation", () => {
     state.openDocumentIds = ["doc-welcome", "doc-project-brief"];
     state.activeDocumentId = "doc-project-brief";
     state.preferences.theme = "light";
+    state.preferences.aiProviderId = "gemini";
+    state.preferences.aiModelId = "gemini-2.5-flash";
     await indexedDbStorage.save(state);
     const restored = await indexedDbStorage.load();
     expect(restored?.activeDocumentId).toBe("doc-project-brief");
     expect(restored?.openDocumentIds).toEqual(["doc-welcome", "doc-project-brief"]);
     expect(restored?.documents).toHaveLength(3);
     expect(restored?.preferences.theme).toBe("light");
+    expect(restored?.preferences.aiProviderId).toBe("gemini");
+    expect(restored?.preferences.aiModelId).toBe("gemini-2.5-flash");
   });
 
   it("exports only the selected workspace and its contents", () => {

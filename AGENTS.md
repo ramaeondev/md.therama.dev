@@ -33,3 +33,4 @@ use the editor.
 - Keep workspace and document ownership browser-local through a `DocumentStorageAdapter`; provider network access stays isolated in replaceable adapters, outside workspace persistence and state.
 - Keep persistence, workspace state/operations, Markdown editing/rendering, and workspace presentation in separate feature modules to support independent evolution.
 - Keep AI provider contracts and adapters in browser-safe feature modules behind a provider registry; BYOK credentials exist only in explicit in-memory provider sessions and are never persisted by adapters.
+- Keep provider configuration and assistant chat orchestration in separate browser-safe services; persist only provider/model preferences and keep BYOK sessions and active requests in memory so credentials never enter workspace storage.

@@ -73,7 +73,10 @@ export function AssistantPanel({
     };
     let conversation = messages;
     if (retry) {
-      const lastAssistantIndex = messages.findLastIndex((message) => message.role === "assistant");
+      const lastAssistantIndex = messages.reduce(
+        (lastIndex, message, index) => message.role === "assistant" ? index : lastIndex,
+        -1,
+      );
       conversation = messages.slice(0, lastAssistantIndex);
     } else {
       conversation = [...messages, userEntry];
@@ -201,7 +204,7 @@ export function AssistantPanel({
                 {message.status === "failed" && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-destructive">
                     <span>{message.error}</span>
-                    {message.role === "assistant" && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => void sendMessage(messages.findLast((entry) => entry.role === "user")?.content ?? "", true)}><RotateCcw /> Retry</Button>}
+                    {message.role === "assistant" && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => void sendMessage(messages.filter((entry) => entry.role === "user").at(-1)?.content ?? "", true)}><RotateCcw /> Retry</Button>}
                   </div>
                 )}
                 {message.status === "stopped" && <div className="mt-1 text-[10px] text-muted-foreground">Generation stopped</div>}
@@ -234,7 +237,7 @@ export function AssistantPanel({
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isConnected ? "bg-primary" : "bg-muted-foreground"}`} />
               {isGenerating ? "Generating response" : isConnected ? modelId : "No provider connected"}
             </div>
-            <Button type="submit" size="icon" className="h-7 w-7" title="Send message" aria-label="Send message" disabled={!value.trim() || !isConnected || isGenerating}><ChevronRight /></Button>
+            <Button type="submit" size="icon" className="h-7 w-7" title="Send message" aria-label="Send message" disabled={!value.trim() || !isConnected || !modelId || isGenerating}><ChevronRight /></Button>
           </div>
         </form>
         <p className="mt-2 text-center text-[9px] text-muted-foreground">Enter to send · Shift+Enter for a new line</p>

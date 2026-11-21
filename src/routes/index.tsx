@@ -23,7 +23,6 @@ import {
   Quote,
   Search,
   Settings2,
-  Sparkles,
   SplitSquareHorizontal,
   Table2,
   Upload,
@@ -36,18 +35,15 @@ import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { AssistantPanel } from "@/features/ai/assistant/AssistantPanel";
+import { ProviderError } from "@/features/ai/providers/errors";
+import type { ProviderModel } from "@/features/ai/providers/types";
+import { connectGemini, disconnectGemini, testGeminiConnection } from "@/features/ai/settings/providerConfiguration";
 import { MarkdownEditor, type MarkdownEditorHandle } from "@/features/editor/MarkdownEditor";
 import { getMarkdownHeadings, MarkdownPreview } from "@/features/editor/MarkdownPreview";
 import { WorkspaceExplorer, type ExplorerAction } from "@/features/workspace/WorkspaceExplorer";
-import { WorkspaceSettings } from "@/features/workspace/WorkspaceSettings";
+import { WorkspaceSettings, type ProviderConnectionStatus, type SettingsSection } from "@/features/workspace/WorkspaceSettings";
 import {
   createMarkdownDocument,
   createStarterState,
@@ -93,8 +89,10 @@ function WorkspacePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
-  const [assistantText, setAssistantText] = useState("");
   const [importing, setImporting] = useState(false);
+  const [providerStatus, setProviderStatus] = useState<ProviderConnectionStatus>("not-configured");
+  const [providerModels, setProviderModels] = useState<ProviderModel[]>([]);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>("general");
   const [createdWorkspaceId, setCreatedWorkspaceId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -472,13 +470,68 @@ function WorkspacePage() {
     void importFiles(event.dataTransfer.files);
   }
 
-  function handleAssistantSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    if (!assistantText.trim()) return;
-    toast.message("AI providers aren’t connected in this foundation phase.", {
-      description: "Your document remains local. Provider setup is planned for a later milestone.",
-    });
-    setAssistantText("");
+  async function handleConnectGemini(apiKey: string): Promise<boolean> {
+    setProviderStatus("connecting");
+    try {
+      const { models } = await connectGemini(apiKey);
+      setProviderModels(models);
+      setProviderStatus("connected");
+      updateState((current) => {
+        const selected = models.find((model) => model.id === current.preferences.aiModelId) ?? models[0];
+        return {
+          ...current,
+          preferences: {
+            ...current.preferences,
+            aiProviderId: "gemini",
+            aiModelId: selected?.id ?? null,
+          },
+        };
+      });
+      toast.success("Gemini connected");
+      return true;
+    } catch (error) {
+      setProviderStatus("failed");
+      setProviderModels([]);
+      toast.error(error instanceof ProviderError ? error.message : "Gemini connection failed. Check your key and try again.");
+      return false;
+    }
+  }
+
+  async function handleTestGemini() {
+    setProviderStatus("testing");
+    try {
+      const { models } = await testGeminiConnection();
+      setProviderModels(models);
+      setProviderStatus("connected");
+      updateState((current) => ({
+        ...current,
+        preferences: {
+          ...current.preferences,
+          aiProviderId: "gemini",
+          aiModelId: models.some((model) => model.id === current.preferences.aiModelId)
+            ? current.preferences.aiModelId
+            : models[0]?.id ?? null,
+        },
+      }));
+      toast.success("Gemini connection is working");
+    } catch (error) {
+      disconnectGemini();
+      setProviderStatus("failed");
+      setProviderModels([]);
+      toast.error(error instanceof ProviderError ? error.message : "Gemini connection failed. Check your key and try again.");
+    }
+  }
+
+  function handleDisconnectGemini() {
+    disconnectGemini();
+    setProviderStatus("not-configured");
+    setProviderModels([]);
+    toast.message("Gemini key cleared from this session");
+  }
+
+  function openAISettings() {
+    setSettingsInitialSection("ai");
+    setSettingsOpen(true);
   }
 
   const setPreferences = (preferences: WorkspaceState["preferences"]) => {
@@ -522,7 +575,7 @@ function WorkspacePage() {
             </div>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Import Markdown file" aria-label="Import Markdown file" onClick={() => fileInputRef.current?.click()}><Upload /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Export workspace" aria-label="Export workspace" onClick={() => void exportWorkspace()}><FileDown /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Preferences" aria-label="Preferences" onClick={() => setSettingsOpen(true)}><Settings2 /></Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Preferences" aria-label="Preferences" onClick={() => { setSettingsInitialSection("general"); setSettingsOpen(true); }}><Settings2 /></Button>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title={assistantOpen ? "Hide assistant panel" : "Show assistant panel"} aria-label={assistantOpen ? "Hide assistant panel" : "Show assistant panel"} onClick={() => setAssistantOpen((open) => !open)}>{assistantOpen ? <PanelRightClose /> : <PanelRightOpen />}</Button>
           </div>
         </div>
@@ -643,10 +696,11 @@ function WorkspacePage() {
               <AssistantPanel
                 workspaceName={activeWorkspace?.name ?? "Workspace"}
                 documentTitle={activeDocument?.title ?? null}
+                documentContent={activeDocument?.content ?? ""}
                 prompts={suggestedPrompts}
-                value={assistantText}
-                onValueChange={setAssistantText}
-                onSubmit={handleAssistantSubmit}
+                isConnected={providerStatus === "connected" && state.preferences.aiProviderId === "gemini"}
+                modelId={state.preferences.aiProviderId === "gemini" ? state.preferences.aiModelId : null}
+                onConfigure={openAISettings}
               />
             </ResizablePanel>
           )}
@@ -656,69 +710,24 @@ function WorkspacePage() {
       <input ref={fileInputRef} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple className="hidden" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ""; }} />
       <input ref={folderInputRef} type="file" accept=".zip,application/zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importWorkspace(file); event.target.value = ""; }} />
       {importing && <div className="fixed bottom-10 right-4 z-50 flex items-center gap-2 rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-lg"><LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Importing files…</div>}
-      <WorkspaceSettings open={settingsOpen} onOpenChange={setSettingsOpen} preferences={state.preferences} onChange={setPreferences} />
+      <WorkspaceSettings
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        preferences={state.preferences}
+        onChange={setPreferences}
+        initialSection={settingsInitialSection}
+        providerStatus={providerStatus}
+        providerModels={providerModels}
+        onConnectGemini={handleConnectGemini}
+        onTestGemini={() => void handleTestGemini()}
+        onDisconnectGemini={handleDisconnectGemini}
+      />
     </main>
   );
 }
 
 function ToolbarButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title={label} aria-label={label} onClick={onClick}>{children}</Button>;
-}
-
-function AssistantPanel({
-  workspaceName,
-  documentTitle,
-  prompts,
-  value,
-  onValueChange,
-  onSubmit,
-}: {
-  workspaceName: string;
-  documentTitle: string | null;
-  prompts: string[];
-  value: string;
-  onValueChange: (value: string) => void;
-  onSubmit: (event: React.FormEvent) => void;
-}) {
-  return (
-    <aside className="flex h-full min-h-0 flex-col border-l border-border bg-sidebar text-sidebar-foreground">
-      <div className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
-        <div className="flex items-center gap-2 text-xs font-medium"><Sparkles className="h-3.5 w-3.5 text-primary" /> Assistant <span className="rounded-sm border border-border px-1 py-0.5 text-[8px] uppercase text-muted-foreground">Preview</span></div>
-        <Select defaultValue="document">
-          <SelectTrigger className="h-7 w-[118px] border-transparent bg-transparent px-2 text-[10px] text-muted-foreground shadow-none"><SelectValue /></SelectTrigger>
-          <SelectContent><SelectItem value="document">This document</SelectItem><SelectItem value="workspace">Workspace</SelectItem></SelectContent>
-        </Select>
-      </div>
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <div className="min-w-0">
-          <div className="truncate text-[10px] font-medium">{documentTitle ?? "No document selected"}</div>
-          <div className="mt-0.5 truncate text-[9px] text-muted-foreground">{workspaceName} · local context</div>
-        </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground" title="New conversation" aria-label="New conversation"><FilePlus2 /></Button>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 py-6 text-center">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card"><Sparkles className="h-4 w-4 text-primary" /></div>
-        <h2 className="mt-4 text-sm font-medium">Your writing companion</h2>
-        <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">This assistant is ready for future provider connections. Your documents stay on this device.</p>
-        <div className="mt-5 w-full text-left">
-          <div className="mb-2 text-[10px] font-medium uppercase text-muted-foreground">Try asking</div>
-          <div className="flex flex-wrap gap-1.5">
-            {prompts.map((prompt) => <Button key={prompt} variant="outline" size="sm" className="h-auto max-w-full whitespace-normal px-2 py-1 text-left text-[10px] font-normal leading-4" onClick={() => onValueChange(prompt)}>{prompt}</Button>)}
-          </div>
-        </div>
-      </div>
-      <div className="border-t border-border p-3">
-        <form onSubmit={onSubmit} className="rounded-md border border-border bg-background p-2">
-          <textarea value={value} onChange={(event) => onValueChange(event.target.value)} placeholder="Ask about your writing…" rows={3} className="w-full resize-none bg-transparent px-1 py-1 text-xs outline-none placeholder:text-muted-foreground" aria-label="Assistant message" />
-          <div className="flex items-center justify-between border-t border-border pt-2">
-            <div className="flex items-center gap-1 text-[9px] text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" /> No provider connected</div>
-            <Button type="submit" size="icon" className="h-7 w-7" title="Send message" aria-label="Send message" disabled={!value.trim()}><ChevronRight /></Button>
-          </div>
-        </form>
-        <p className="mt-2 text-center text-[9px] text-muted-foreground">AI connections arrive in a later milestone.</p>
-      </div>
-    </aside>
-  );
 }
 
 function downloadBlob(blob: Blob, fileName: string) {

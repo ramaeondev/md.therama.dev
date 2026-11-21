@@ -3,5 +3,7 @@
 - [x] Add metadata and behavior coverage; verify app and commit changes.
 - [x] Milestone 2 Phase A: provider contracts, registry, and normalized errors.
 - [x] Milestone 2 Phase B: Gemini discovery, connection checks, text generation, and streaming.
-- Next: Milestone 2 Phase C, OpenAI integration; then provider settings, assistant chat, and persistence/security verification.
+- [x] Milestone 2 Phase D: Gemini settings, connection testing, dynamic model discovery, and saved non-sensitive model preference.
+- [x] Milestone 2 Phase E: Gemini streaming assistant, optional active-document context, cancellation, retry, and in-session conversations.
+- Next: Milestone 2 Phase F, conversation persistence and usage tracking; then Phase C, OpenAI integration.
 - Later milestone (out of scope): Workspace Intelligence (RAG).
