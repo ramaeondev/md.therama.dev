@@ -6,7 +6,7 @@ import { ChevronRight, FilePlus2, LoaderCircle, RotateCcw, Sparkles, Square } fr
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
-import { ProviderError } from "../providers/errors";
+import { isAbortError, ProviderError } from "../providers/errors";
 import { streamAssistantReply } from "./chatService";
 
 type AssistantMessage = {
@@ -41,6 +41,7 @@ export function AssistantPanel({
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [contextEnabled, setContextEnabled] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const canChat = isConnected && Boolean(modelId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const runningRef = useRef(false);
@@ -108,7 +109,7 @@ export function AssistantPanel({
         message.id === assistantId ? { ...message, status: controller.signal.aborted ? "stopped" : "complete" } : message,
       ));
     } catch (error) {
-      const wasStopped = controller.signal.aborted || (error instanceof Error && error.name === "AbortError");
+      const wasStopped = controller.signal.aborted || isAbortError(error);
       const safeError = error instanceof ProviderError ? error.message : "The response could not be completed. Try again.";
       setMessages((current) => current.map((message) =>
         message.id === assistantId
@@ -162,16 +163,16 @@ export function AssistantPanel({
           </div>
         </div>
         <div className="truncate border-t border-border pt-2 text-[9px] text-muted-foreground" title={modelId ?? undefined}>
-          {isConnected && modelId ? `Google Gemini · ${modelId}` : "No provider connected"}
+          {isConnected ? `Google Gemini · ${modelId ?? "no model selected"}` : "No provider connected"}
         </div>
       </div>
 
-      {!isConnected ? (
+      {!canChat ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 py-6 text-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card"><Sparkles className="h-4 w-4 text-primary" /></div>
-          <h2 className="mt-4 text-sm font-medium">Connect Gemini to begin</h2>
-          <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">Your API key stays in this browser session and is never saved with your documents.</p>
-          <Button className="mt-4" size="sm" onClick={onConfigure}>Configure Gemini</Button>
+          <h2 className="mt-4 text-sm font-medium">{isConnected ? "Choose a Gemini model" : "Connect Gemini to begin"}</h2>
+          <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">{isConnected ? "Select an available model in Preferences before sending a message." : "Your API key stays in this browser session and is never saved with your documents."}</p>
+          <Button className="mt-4" size="sm" onClick={onConfigure}>{isConnected ? "Choose model" : "Configure Gemini"}</Button>
         </div>
       ) : messages.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-6 text-center">
@@ -226,18 +227,18 @@ export function AssistantPanel({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder={isConnected ? "Ask about your writing…" : "Connect Gemini in Preferences to chat…"}
+            placeholder={canChat ? "Ask about your writing…" : isConnected ? "Select a model in Preferences…" : "Connect Gemini in Preferences to chat…"}
             rows={3}
-            disabled={!isConnected || isGenerating}
+            disabled={!canChat || isGenerating}
             className="w-full resize-none bg-transparent px-1 py-1 text-xs outline-none placeholder:text-muted-foreground disabled:opacity-60"
             aria-label="Assistant message"
           />
           <div className="flex items-center justify-between border-t border-border pt-2">
             <div className="flex min-w-0 items-center gap-1 truncate text-[9px] text-muted-foreground" aria-live="polite">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isConnected ? "bg-primary" : "bg-muted-foreground"}`} />
-              {isGenerating ? "Generating response" : isConnected ? modelId : "No provider connected"}
+              {isGenerating ? "Generating response" : canChat ? modelId : isConnected ? "Select a model" : "No provider connected"}
             </div>
-            <Button type="submit" size="icon" className="h-7 w-7" title="Send message" aria-label="Send message" disabled={!value.trim() || !isConnected || !modelId || isGenerating}><ChevronRight /></Button>
+            <Button type="submit" size="icon" className="h-7 w-7" title="Send message" aria-label="Send message" disabled={!value.trim() || !canChat || isGenerating}><ChevronRight /></Button>
           </div>
         </form>
         <p className="mt-2 text-center text-[9px] text-muted-foreground">Enter to send · Shift+Enter for a new line</p>
