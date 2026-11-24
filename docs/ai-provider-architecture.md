@@ -6,13 +6,43 @@
 
 Adapters expose connection checks, model discovery, one-shot generation, and async text streaming. Provider errors are converted to `ProviderError` codes with safe user-facing messages; raw provider error bodies and credentials are not included in errors.
 
-`src/features/ai/settings/providerConfiguration.ts` owns the active browser-memory session and resolves the registered adapter. It exposes safe model/connection results to settings, and disconnecting also aborts tracked assistant requests. The settings UI persists only the selected provider and model ID through workspace preferences; it never persists the API key.
+`src/features/ai/settings/providerConfiguration.ts` owns the in-memory provider sessions for the browser tab. Several providers can be connected at once, each with its own BYOK key held in a closure. It exposes safe model/connection results to settings, resolves the active session for the chat service, and aborts tracked assistant requests when a provider is disconnected. Only the active provider ID and selected models are persisted through workspace preferences; an API key is never persisted.
 
-`src/features/ai/assistant/chatService.ts` resolves the active adapter through the registry and delegates streaming through the shared provider session. It exposes two entry points: `streamAssistantReply` yields text only, and `streamAssistantReplyEvents` yields text plus a terminal `done` event carrying provider-reported usage. Both record a usage entry per request. `AssistantPanel` owns the visible conversation and persists terminal messages through `conversationStore`.
+`src/features/ai/assistant/chatService.ts` resolves the active adapter through the registry and delegates streaming through the shared provider session. It exposes two entry points: `streamAssistantReply` yields text only, and `streamAssistantReplyEvents` yields text plus a terminal `done` event carrying provider-reported usage and the serving provider/model. Both record a usage entry per request. `AssistantPanel` owns the visible conversation and persists terminal messages through `conversationStore`.
+
+## Provider categories
+
+The architecture supports three categories behind one contract:
+
+| Category | Examples | How it is defined |
+| --- | --- | --- |
+| Native providers | Gemini, OpenAI | A dedicated module in `providers/` registered at startup. |
+| OpenAI-compatible providers | 100milionseek, OpenRouter, Groq, DeepSeek, Ollama, LM Studio, vLLM | `createOpenAiCompatibleProvider` at runtime with a user-supplied base URL. |
+| Custom providers | Any future endpoint | A compatible instance that is registered, connected, and tracked by its own ID. |
+
+All three are registered in the same `ProviderRegistry` and are indistinguishable to the assistant, settings, and usage layers.
+
+## Gemini adapter
+
+Gemini uses the REST `models.list`, `generateContent`, and `streamGenerateContent` methods, reads model capabilities and token limits from discovery, and reports usage only when returned by the provider. Models are identified as dynamically discovered; no fallback catalog is presented as live data.
+
+Each call to `initialize` creates an isolated in-memory session. The session retains its BYOK key only in a closure and sends it in the `x-goog-api-key` header.
+
+## OpenAI adapters
+
+`providers/openai.ts` is the official OpenAI adapter: a small configuration of the shared Chat Completions transport with a fixed base URL of `https://api.openai.com/v1`. `providers/openaiCompatible.ts` builds one adapter per user-configured compatible provider, each with its own stable ID such as `openai-compatible:100milionseek`.
+
+Both read from `providers/shared/openAiCompatible.ts`, which owns request mapping, SSE parsing, usage extraction, and error normalization. This is a shared *transport*, not a shared provider: each adapter keeps its own identity, endpoint, credentials, and error attribution.
+
+Chat Completions (`POST /chat/completions`) is used rather than the Responses API because it matches the existing contract. Migrating to the Responses API later means changing one adapter module.
+
+See [OpenAI provider integration](./openai-provider-integration.md) for request mapping, streaming, model discovery, and security details.
 
 ## Conversations
 
-`conversationTypes.ts` defines `Conversation` and `ConversationMessage`. A conversation belongs to a workspace, may reference a document, and records the provider and model used. A message carries `role`, `content`, `status` (`complete` | `interrupted` | `failed`), a monotonic `sequence` for stable ordering, and optional provider-reported `usage`. No message or conversation record contains a credential.
+`conversationTypes.ts` defines `Conversation` and `ConversationMessage`. A conversation belongs to a workspace, may reference a document, and records the provider and model used. A message carries `role`, `content`, `status` (`complete` | `interrupted` | `failed`), a monotonic `sequence` for stable ordering, optional provider-reported `usage`, and the `providerId`/`modelId` that produced it. No message or conversation record contains a credential.
+
+Per-message attribution means a conversation can span providers: a reply generated by Gemini keeps that label after the user switches to OpenAI for the next turn. The conversation record itself reflects the most recent assistant reply's provider.
 
 `conversationStorage.ts` is the repository over the `conversations`, `messages`, and `app-meta` stores; `conversationStore.ts` is the only module that writes conversations and messages and is what the UI calls. Streaming text is buffered in component state and written exactly once when the request reaches a terminal state, so an interrupted request cannot leave duplicated or half-written assistant rows. A user's stopped generation is stored as `interrupted` with the partial text that arrived.
 
@@ -30,17 +60,17 @@ Dashboard totals sum `provider_reported` records only. `estimate.ts` provides a 
 
 `src/lib/indexedDb.ts` owns the single database connection and its version history. Version 1 stored `workspace-state`; version 2 adds `conversations`, `messages`, `ai-usage`, and `app-meta` with their indexes. Migrations are additive and never clear or drop a store, so existing workspaces, documents, and settings survive an upgrade. A failed upgrade aborts its transaction, leaving the previous version and its data intact.
 
-
-## Gemini adapter
-
-The initial registry contains Google Gemini. Its adapter uses the Gemini REST `models.list`, `generateContent`, and `streamGenerateContent` methods, reads model capabilities and token limits from discovery, and reports usage only when returned by the provider. Models are identified as dynamically discovered; no fallback catalog is presented as live data.
-
-Each call to `initialize` creates an isolated in-memory session. The session retains its BYOK key only in a closure and sends it in the `x-goog-api-key` header. The adapter does not persist provider settings or credentials. Browser-direct key risks and handling guidance are documented in [BYOK security](./byok-security.md).
+Phase C required no schema change. Custom OpenAI-compatible definitions reuse the existing `app-meta` key/value store, and per-message provider attribution is an additive optional field that older records simply lack.
 
 ## Adding an adapter
 
-Implement the `AIProvider` descriptor and `initialize` method in a provider-specific module, normalize all failures with the shared error contract, and register it in `createDefaultProviderRegistry`. Preserve the common request/model types; add optional capabilities rather than branching provider HTTP behavior into assistant or workspace UI code.
+1. Implement the `AIProvider` descriptor and `initialize` method in a provider-specific module.
+2. Normalize all failures with the shared error contract in `providers/errors.ts`.
+3. Register it in `createDefaultProviderRegistry` for a built-in provider, or through `saveCustomProvider` for a user-configured one.
+4. Preserve the common request/model types; add optional capabilities rather than branching provider HTTP behavior into assistant or workspace UI code.
 
 Optionally implement `streamTextEvents` alongside `streamText` to surface provider-reported token usage during streaming. When an adapter omits it, usage is recorded as unavailable rather than estimated.
 
-OpenAI remains a later Milestone 2 phase.
+## Browser-direct credential risk
+
+A key used by a browser application is visible to that browser's owner and may be inspected with developer tools or browser extensions. This is an accepted MVP trade-off, not equivalent to server-side secret storage. Do not silently send a BYOK key to an application backend; a production deployment should add an explicit credential proxy. Risks and handling guidance are documented in [BYOK security](./byok-security.md).

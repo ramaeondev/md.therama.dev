@@ -51,9 +51,23 @@ type AssistantPanelProps = {
   prompts: string[];
   isConnected: boolean;
   providerId: string | null;
+  /** Display name of the active provider, e.g. "OpenAI". */
+  providerLabel?: string | null;
   modelId: string | null;
   onConfigure: () => void;
 };
+
+/** Short, human label for an assistant reply's attribution. */
+function assistantLabel(
+  providerId: string | null | undefined,
+  modelId: string | null | undefined,
+): string {
+  if (providerId === "gemini") return "Gemini";
+  if (providerId === "openai") return "OpenAI";
+  if (providerId?.startsWith("openai-compatible:")) return "Compatible";
+  if (providerId) return providerId;
+  return modelId ? "Assistant" : "Assistant";
+}
 
 export function AssistantPanel({
   workspaceId,
@@ -64,6 +78,7 @@ export function AssistantPanel({
   prompts,
   isConnected,
   providerId,
+  providerLabel,
   modelId,
   onConfigure,
 }: AssistantPanelProps) {
@@ -218,6 +233,8 @@ export function AssistantPanel({
       status: "complete",
       sequence: Number.MAX_SAFE_INTEGER,
       streaming: true,
+      ...(providerId ? { providerId } : {}),
+      ...(modelId ? { modelId } : {}),
     };
     setMessages((current) => [...current, draft]);
     runningRef.current = true;
@@ -227,6 +244,10 @@ export function AssistantPanel({
     controllerRef.current = controller;
     let buffered = "";
     let usage: ProviderUsage | undefined;
+    // Attribution comes from the adapter that actually served the request, so a
+    // switch mid-stream can never mislabel a reply.
+    let responseProviderId: string | undefined;
+    let responseModelId: string | undefined;
     let finalStatus: ConversationMessageStatus = "complete";
     let failureMessage: string | undefined;
 
@@ -238,7 +259,9 @@ export function AssistantPanel({
       for await (const event of streamAssistantReplyEvents({
         model: modelId,
         messages: requestMessages,
-        ...(contextUsed && documentTitle ? { documentContext: { title: documentTitle, content: documentContent } } : {}),
+        ...(contextUsed && documentTitle
+          ? { documentContext: { title: documentTitle, content: documentContent } }
+          : {}),
         signal: controller.signal,
         conversationId: target.id,
       })) {
@@ -246,11 +269,15 @@ export function AssistantPanel({
           // Buffered in render state only; storage is written once, at the end.
           buffered += event.text;
           const snapshot = buffered;
-          setMessages((current) => current.map((message) =>
-            message.id === assistantId ? { ...message, content: snapshot } : message,
-          ));
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantId ? { ...message, content: snapshot } : message,
+            ),
+          );
         } else if (event.type === "done") {
           usage = event.usage;
+          responseProviderId = event.providerId;
+          responseModelId = event.modelId;
         }
       }
       if (controller.signal.aborted) finalStatus = "interrupted";
@@ -259,13 +286,19 @@ export function AssistantPanel({
         finalStatus = "interrupted";
       } else {
         finalStatus = "failed";
-        failureMessage = error instanceof ProviderError ? error.message : "The response could not be completed. Try again.";
+        failureMessage =
+          error instanceof ProviderError
+            ? error.message
+            : "The response could not be completed. Try again.";
       }
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null;
       runningRef.current = false;
       setIsGenerating(false);
     }
+
+    const attributedProviderId = responseProviderId ?? providerId ?? undefined;
+    const attributedModelId = responseModelId ?? modelId ?? undefined;
 
     // Persist exactly one terminal assistant message, including partial text.
     try {
@@ -275,15 +308,27 @@ export function AssistantPanel({
         content: buffered,
         status: finalStatus,
         ...(usage ? { usage } : {}),
+        ...(attributedProviderId ? { providerId: attributedProviderId } : {}),
+        ...(attributedModelId ? { modelId: attributedModelId } : {}),
         ...(failureMessage ? { error: failureMessage } : {}),
       });
-      setMessages((current) => current.map((message) =>
-        message.id === assistantId ? { ...stored } : message,
-      ));
+      setMessages((current) =>
+        current.map((message) => (message.id === assistantId ? { ...stored } : message)),
+      );
     } catch {
-      setMessages((current) => current.map((message) =>
-        message.id === assistantId ? { ...message, streaming: false, status: finalStatus } : message,
-      ));
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                streaming: false,
+                status: finalStatus,
+                ...(attributedProviderId ? { providerId: attributedProviderId } : {}),
+                ...(attributedModelId ? { modelId: attributedModelId } : {}),
+              }
+            : message,
+        ),
+      );
     }
     // Reflect a title adopted from the opening question, or a bumped updatedAt.
     // Guarded so a slow refresh cannot resurrect a conversation the user has
@@ -306,17 +351,34 @@ export function AssistantPanel({
   }
 
   const isEmpty = messages.length === 0;
-  const lastUserMessage = messages.filter((message) => message.role === "user").at(-1)?.content ?? "";
+  const lastUserMessage =
+    messages.filter((message) => message.role === "user").at(-1)?.content ?? "";
 
   return (
-    <aside className="flex h-full min-h-0 flex-col border-l border-border bg-sidebar text-sidebar-foreground" aria-label="AI Assistant">
+    <aside
+      className="flex h-full min-h-0 flex-col border-l border-border bg-sidebar text-sidebar-foreground"
+      aria-label="AI Assistant"
+    >
       <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
         <div className="flex min-w-0 items-center gap-2 text-xs font-medium">
           <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
-          <span className="truncate" title={conversation?.title}>{conversation?.title ?? "Assistant"}</span>
+          <span className="truncate" title={conversation?.title}>
+            {conversation?.title ?? "Assistant"}
+          </span>
         </div>
         <div className="flex items-center gap-1">
-          {isGenerating && <Button variant="ghost" size="icon" className="h-7 w-7" title="Stop generation" aria-label="Stop generation" onClick={stopGeneration}><Square /></Button>}
+          {isGenerating && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              title="Stop generation"
+              aria-label="Stop generation"
+              onClick={stopGeneration}
+            >
+              <Square />
+            </Button>
+          )}
           <Button
             variant={historyOpen ? "secondary" : "ghost"}
             size="icon"
@@ -325,31 +387,58 @@ export function AssistantPanel({
             aria-label="Conversation history"
             aria-expanded={historyOpen}
             onClick={() => setHistoryOpen((open) => !open)}
-          ><History /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="New conversation" aria-label="New conversation" onClick={() => void startNewConversation()}><FilePlus2 /></Button>
+          >
+            <History />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground"
+            title="New conversation"
+            aria-label="New conversation"
+            onClick={() => void startNewConversation()}
+          >
+            <FilePlus2 />
+          </Button>
         </div>
       </div>
 
       {historyOpen && (
         <div className="max-h-64 shrink-0 overflow-y-auto border-b border-border bg-popover p-1">
-          <div className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">This workspace</div>
-          {conversations.length === 0 && <p className="px-2 py-2 text-[11px] text-muted-foreground">No saved conversations yet.</p>}
+          <div className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">
+            This workspace
+          </div>
+          {conversations.length === 0 && (
+            <p className="px-2 py-2 text-[11px] text-muted-foreground">
+              No saved conversations yet.
+            </p>
+          )}
           {conversations.map((entry) => (
-            <div key={entry.id} className={`group flex items-center gap-1 rounded-sm px-1 ${entry.id === conversation?.id ? "bg-secondary" : ""}`}>
+            <div
+              key={entry.id}
+              className={`group flex items-center gap-1 rounded-sm px-1 ${entry.id === conversation?.id ? "bg-secondary" : ""}`}
+            >
               {renamingId === entry.id ? (
                 <form
                   className="flex min-w-0 flex-1 items-center gap-1 py-1"
-                  onSubmit={(event) => { event.preventDefault(); void commitRename(entry); }}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void commitRename(entry);
+                  }}
                 >
                   <input
                     autoFocus
                     value={renameDraft}
                     onChange={(event) => setRenameDraft(event.target.value)}
-                    onKeyDown={(event) => { if (event.key === "Escape") setRenamingId(null); }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setRenamingId(null);
+                    }}
                     className="min-w-0 flex-1 rounded-sm border border-input bg-background px-1 py-0.5 text-[11px] outline-none"
                     aria-label="Conversation title"
                   />
-                  <Button type="submit" variant="ghost" size="sm" className="h-6 px-1 text-[10px]">Save</Button>
+                  <Button type="submit" variant="ghost" size="sm" className="h-6 px-1 text-[10px]">
+                    Save
+                  </Button>
                 </form>
               ) : (
                 <>
@@ -366,8 +455,13 @@ export function AssistantPanel({
                     className="h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                     title="Rename conversation"
                     aria-label={`Rename ${entry.title}`}
-                    onClick={() => { setRenamingId(entry.id); setRenameDraft(entry.title); }}
-                  ><Pencil /></Button>
+                    onClick={() => {
+                      setRenamingId(entry.id);
+                      setRenameDraft(entry.title);
+                    }}
+                  >
+                    <Pencil />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -375,7 +469,9 @@ export function AssistantPanel({
                     title="Delete conversation"
                     aria-label={`Delete ${entry.title}`}
                     onClick={() => void removeConversation(entry)}
-                  ><Trash2 /></Button>
+                  >
+                    <Trash2 />
+                  </Button>
                 </>
               )}
             </div>
@@ -386,35 +482,78 @@ export function AssistantPanel({
       <div className="flex shrink-0 flex-col gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="truncate text-[10px] font-medium">{documentTitle ?? "No document selected"}</div>
-            <div className="mt-0.5 truncate text-[9px] text-muted-foreground">{workspaceName} · {contextEnabled && documentTitle ? "document context on" : "general answers"}</div>
+            <div className="truncate text-[10px] font-medium">
+              {documentTitle ?? "No document selected"}
+            </div>
+            <div className="mt-0.5 truncate text-[9px] text-muted-foreground">
+              {workspaceName} ·{" "}
+              {contextEnabled && documentTitle ? "document context on" : "general answers"}
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <span className="text-[10px] text-muted-foreground">Use document</span>
-            <Switch checked={contextEnabled} onCheckedChange={setContextEnabled} disabled={!documentTitle} aria-label="Use current document as context" />
+            <Switch
+              checked={contextEnabled}
+              onCheckedChange={setContextEnabled}
+              disabled={!documentTitle}
+              aria-label="Use current document as context"
+            />
           </div>
         </div>
-        <div className="truncate border-t border-border pt-2 text-[9px] text-muted-foreground" title={modelId ?? undefined}>
-          {isConnected ? `${providerId === "gemini" ? "Google Gemini" : providerId ?? "Provider"} · ${modelId ?? "no model selected"}` : "No provider connected"}
+        <div
+          className="truncate border-t border-border pt-2 text-[9px] text-muted-foreground"
+          title={modelId ?? undefined}
+        >
+          {isConnected
+            ? `${providerLabel ?? "Provider"} · ${modelId ?? "no model selected"}`
+            : "No provider connected"}
         </div>
       </div>
 
       {!canChat ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 py-6 text-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card"><Sparkles className="h-4 w-4 text-primary" /></div>
-          <h2 className="mt-4 text-sm font-medium">{isConnected ? "Choose a Gemini model" : "Connect Gemini to begin"}</h2>
-          <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">{isConnected ? "Select an available model in Preferences before sending a message." : "Your API key stays in this browser session and is never saved with your documents."}</p>
-          <Button className="mt-4" size="sm" onClick={onConfigure}>{isConnected ? "Choose model" : "Configure Gemini"}</Button>
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card">
+            <Sparkles className="h-4 w-4 text-primary" />
+          </div>
+          <h2 className="mt-4 text-sm font-medium">
+            {isConnected ? "Choose a model" : "Connect an AI provider to begin"}
+          </h2>
+          <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">
+            {isConnected
+              ? "Select an available model in Preferences before sending a message."
+              : "Your API key stays in this browser session and is never saved with your documents."}
+          </p>
+          <Button className="mt-4" size="sm" onClick={onConfigure}>
+            {isConnected ? "Choose model" : "Configure providers"}
+          </Button>
         </div>
       ) : isEmpty ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-6 text-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card"><Sparkles className="h-4 w-4 text-primary" /></div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card">
+            <Sparkles className="h-4 w-4 text-primary" />
+          </div>
           <h2 className="mt-4 text-sm font-medium">What are you working on?</h2>
-          <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">{contextEnabled && documentTitle ? `Answers can refer to ${documentTitle}.` : "Ask a question or choose a prompt to get started."}</p>
+          <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">
+            {contextEnabled && documentTitle
+              ? `Answers can refer to ${documentTitle}.`
+              : "Ask a question or choose a prompt to get started."}
+          </p>
           <div className="mt-5 w-full text-left">
-            <div className="mb-2 text-[10px] font-medium uppercase text-muted-foreground">Try asking</div>
+            <div className="mb-2 text-[10px] font-medium uppercase text-muted-foreground">
+              Try asking
+            </div>
             <div className="flex flex-wrap gap-1.5">
-              {prompts.map((prompt) => <Button key={prompt} variant="outline" size="sm" className="h-auto max-w-full whitespace-normal px-2 py-1 text-left text-[10px] font-normal leading-4" onClick={() => setValue(prompt)}>{prompt}</Button>)}
+              {prompts.map((prompt) => (
+                <Button
+                  key={prompt}
+                  variant="outline"
+                  size="sm"
+                  className="h-auto max-w-full whitespace-normal px-2 py-1 text-left text-[10px] font-normal leading-4"
+                  onClick={() => setValue(prompt)}
+                >
+                  {prompt}
+                </Button>
+              ))}
             </div>
           </div>
         </div>
@@ -422,25 +561,52 @@ export function AssistantPanel({
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-4 p-3" aria-live="polite" aria-label="Conversation">
             {messages.map((message) => (
-              <article key={message.id} className={message.role === "user" ? "ml-3 border-l-2 border-primary/50 pl-3" : "mr-1"}>
+              <article
+                key={message.id}
+                className={
+                  message.role === "user" ? "ml-3 border-l-2 border-primary/50 pl-3" : "mr-1"
+                }
+              >
                 <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-medium uppercase text-muted-foreground">
-                  <span>{message.role === "user" ? "You" : providerId === "gemini" ? "Gemini" : "Assistant"}</span>
-                  {message.usage && <span className="normal-case">{message.usage.totalTokens ?? "?"} tokens</span>}
+                  <span title={message.modelId ?? undefined}>
+                    {message.role === "user"
+                      ? "You"
+                      : assistantLabel(
+                          message.providerId ?? providerId,
+                          message.modelId ?? modelId,
+                        )}
+                  </span>
+                  {message.usage && (
+                    <span className="normal-case">{message.usage.totalTokens ?? "?"} tokens</span>
+                  )}
                 </div>
                 {message.content ? (
                   <div className="markdown-prose text-xs leading-5">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
                   </div>
                 ) : message.streaming ? (
-                  <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground"><LoaderCircle className="h-3 w-3 animate-spin" /> Thinking…</div>
+                  <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+                    <LoaderCircle className="h-3 w-3 animate-spin" /> Thinking…
+                  </div>
                 ) : null}
                 {message.status === "failed" && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-destructive">
                     <span>{message.error}</span>
-                    {message.role === "assistant" && lastUserMessage && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => void sendMessage(lastUserMessage, true)}><RotateCcw /> Retry</Button>}
+                    {message.role === "assistant" && lastUserMessage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => void sendMessage(lastUserMessage, true)}
+                      >
+                        <RotateCcw /> Retry
+                      </Button>
+                    )}
                   </div>
                 )}
-                {message.status === "interrupted" && <div className="mt-1 text-[10px] text-muted-foreground">Generation stopped</div>}
+                {message.status === "interrupted" && (
+                  <div className="mt-1 text-[10px] text-muted-foreground">Generation stopped</div>
+                )}
               </article>
             ))}
             <div ref={messagesEndRef} />
@@ -459,21 +625,49 @@ export function AssistantPanel({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder={canChat ? "Ask about your writing…" : isConnected ? "Select a model in Preferences…" : "Connect Gemini in Preferences to chat…"}
+            placeholder={
+              canChat
+                ? "Ask about your writing…"
+                : isConnected
+                  ? "Select a model in Preferences…"
+                  : "Connect an AI provider in Preferences to chat…"
+            }
             rows={3}
             disabled={!canChat || isGenerating}
             className="w-full resize-none bg-transparent px-1 py-1 text-xs outline-none placeholder:text-muted-foreground disabled:opacity-60"
             aria-label="Assistant message"
           />
           <div className="flex items-center justify-between border-t border-border pt-2">
-            <div className="flex min-w-0 items-center gap-1 truncate text-[9px] text-muted-foreground" aria-live="polite">
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isConnected ? "bg-primary" : "bg-muted-foreground"}`} />
-              {isGenerating ? "Generating response" : canChat ? modelId : isConnected ? "Select a model" : "No provider connected"}
+            <div
+              className="flex min-w-0 items-center gap-1 truncate text-[9px] text-muted-foreground"
+              aria-live="polite"
+            >
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${isConnected ? "bg-primary" : "bg-muted-foreground"}`}
+              />
+              {isGenerating
+                ? "Generating response"
+                : canChat
+                  ? modelId
+                  : isConnected
+                    ? "Select a model"
+                    : "No provider connected"}
             </div>
-            <Button type="submit" size="icon" className="h-7 w-7" title="Send message" aria-label="Send message" disabled={!value.trim() || !canChat || isGenerating}><ChevronRight /></Button>
+            <Button
+              type="submit"
+              size="icon"
+              className="h-7 w-7"
+              title="Send message"
+              aria-label="Send message"
+              disabled={!value.trim() || !canChat || isGenerating}
+            >
+              <ChevronRight />
+            </Button>
           </div>
         </form>
-        <p className="mt-2 text-center text-[9px] text-muted-foreground">Enter to send · Shift+Enter for a new line</p>
+        <p className="mt-2 text-center text-[9px] text-muted-foreground">
+          Enter to send · Shift+Enter for a new line
+        </p>
       </div>
     </aside>
   );

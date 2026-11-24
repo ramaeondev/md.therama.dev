@@ -10,7 +10,10 @@ import {
   type ConversationMessageStatus,
   type CreateConversationInput,
 } from "./conversationTypes";
-import { indexedDbConversationStorage, type ConversationStorageAdapter } from "./conversationStorage";
+import {
+  indexedDbConversationStorage,
+  type ConversationStorageAdapter,
+} from "./conversationStorage";
 
 import type { ProviderUsage } from "../providers/types";
 
@@ -38,17 +41,26 @@ export async function readConversation(conversationId: string): Promise<Conversa
   return storage().getConversation(conversationId);
 }
 
-export async function createConversationForWorkspace(input: CreateConversationInput): Promise<Conversation> {
+export async function createConversationForWorkspace(
+  input: CreateConversationInput,
+): Promise<Conversation> {
   const conversation = createConversation(input);
   await storage().saveConversation(conversation);
   await storage().setActiveConversationId(conversation.workspaceId, conversation.id);
   return conversation;
 }
 
-export async function renameConversation(conversation: Conversation, title: string): Promise<Conversation> {
+export async function renameConversation(
+  conversation: Conversation,
+  title: string,
+): Promise<Conversation> {
   const nextTitle = normalizeConversationTitle(title) || conversation.title;
   if (nextTitle === conversation.title) return conversation;
-  const updated: Conversation = { ...conversation, title: nextTitle, updatedAt: new Date().toISOString() };
+  const updated: Conversation = {
+    ...conversation,
+    title: nextTitle,
+    updatedAt: new Date().toISOString(),
+  };
   await storage().saveConversation(updated);
   return updated;
 }
@@ -56,7 +68,8 @@ export async function renameConversation(conversation: Conversation, title: stri
 export async function deleteConversation(conversation: Conversation): Promise<void> {
   await storage().deleteConversation(conversation.id);
   const activeId = await storage().getActiveConversationId(conversation.workspaceId);
-  if (activeId === conversation.id) await storage().setActiveConversationId(conversation.workspaceId, null);
+  if (activeId === conversation.id)
+    await storage().setActiveConversationId(conversation.workspaceId, null);
 }
 
 export async function openConversation(conversation: Conversation): Promise<ConversationMessage[]> {
@@ -73,7 +86,10 @@ export async function getActiveConversationId(workspaceId: string): Promise<stri
   return storage().getActiveConversationId(workspaceId);
 }
 
-export async function setActiveConversation(workspaceId: string, conversationId: string | null): Promise<void> {
+export async function setActiveConversation(
+  workspaceId: string,
+  conversationId: string | null,
+): Promise<void> {
   await storage().setActiveConversationId(workspaceId, conversationId);
 }
 
@@ -83,6 +99,8 @@ export type AppendMessageInput = {
   content: string;
   status: ConversationMessageStatus;
   usage?: ProviderUsage;
+  providerId?: string;
+  modelId?: string;
   error?: string;
   now?: string;
 };
@@ -103,12 +121,18 @@ export async function appendMessage(input: AppendMessageInput): Promise<Conversa
   if (conversation) {
     // Title an untouched conversation from its opening question. A manual rename
     // changes the title away from the default, so it is never overwritten.
-    const shouldAdoptOpeningQuestion = input.role === "user"
-      && conversation.title === defaultConversationTitle
-      && (await isOpeningUserMessage(input.conversationId, message.id));
+    const shouldAdoptOpeningQuestion =
+      input.role === "user" &&
+      conversation.title === defaultConversationTitle &&
+      (await isOpeningUserMessage(input.conversationId, message.id));
     await storage().saveConversation({
       ...conversation,
       ...(shouldAdoptOpeningQuestion ? { title: deriveConversationTitle(input.content) } : {}),
+      // The conversation reflects the provider that produced its latest reply,
+      // while each message keeps its own attribution.
+      ...(input.role === "assistant" && input.providerId
+        ? { providerId: input.providerId, modelId: input.modelId ?? conversation.modelId }
+        : {}),
       updatedAt: input.now ?? new Date().toISOString(),
     });
   }
@@ -116,7 +140,9 @@ export async function appendMessage(input: AppendMessageInput): Promise<Conversa
 }
 
 /** Removes trailing assistant replies so a retry does not duplicate history. */
-export async function dropTrailingAssistantMessages(conversationId: string): Promise<ConversationMessage[]> {
+export async function dropTrailingAssistantMessages(
+  conversationId: string,
+): Promise<ConversationMessage[]> {
   const ordered = await listMessages(conversationId);
   const kept = [...ordered];
   while (kept.length > 0 && kept[kept.length - 1]?.role === "assistant") kept.pop();

@@ -1,7 +1,11 @@
 import { ProviderError, isAbortError } from "../providers/errors";
 import { providerRegistry } from "../providers";
 import type { ProviderMessage, ProviderStreamEvent, ProviderUsage } from "../providers/types";
-import { resolveActiveProviderSession, trackProviderRequest } from "../settings/providerConfiguration";
+import {
+  ensureCustomProvidersLoaded,
+  resolveActiveProviderSession,
+  trackProviderRequest,
+} from "../settings/providerConfiguration";
 import { startUsageRequest } from "../usage/usageStore";
 
 export type AssistantChatInput = {
@@ -15,7 +19,7 @@ export type AssistantChatInput = {
 
 export type AssistantStreamEvent =
   | { type: "text"; text: string }
-  | { type: "done"; usage?: ProviderUsage };
+  | { type: "done"; usage?: ProviderUsage; providerId: string; modelId: string };
 
 function buildSystemInstruction(context: AssistantChatInput["documentContext"]): string {
   return context
@@ -27,6 +31,12 @@ function buildSystemInstruction(context: AssistantChatInput["documentContext"]):
  * Streams an assistant reply as ordered events and records provider-independent
  * usage for the request.
  *
+ * The provider is whatever provider is active at call time, so a conversation
+ * started with one provider can continue with another: history is passed through
+ * the shared request contract and only the adapter differs. The resolved provider
+ * ID and model are reported on the terminal event so the caller can attribute the
+ * stored message.
+ *
  * Status is derived from how the request ended, never from whether some text
  * arrived: a stopped or failed stream is recorded as `interrupted`/`failed` and
  * is never counted as a completed request.
@@ -34,11 +44,13 @@ function buildSystemInstruction(context: AssistantChatInput["documentContext"]):
 export async function* streamAssistantReplyEvents(
   input: AssistantChatInput,
 ): AsyncIterable<AssistantStreamEvent> {
+  await ensureCustomProvidersLoaded();
   const session = resolveActiveProviderSession();
   const provider = providerRegistry.resolve(session.providerId);
   if (!provider.descriptor.capabilities.includes("streaming")) {
     throw new ProviderError(session.providerId, "invalid_request", false);
   }
+  const providerId = provider.descriptor.id;
 
   const systemInstruction = buildSystemInstruction(input.documentContext);
   const linkedController = new AbortController();
@@ -47,7 +59,7 @@ export async function* streamAssistantReplyEvents(
   input.signal.addEventListener("abort", abortLinked, { once: true });
 
   const usage = startUsageRequest({
-    providerId: provider.descriptor.id,
+    providerId,
     modelId: input.model,
     conversationId: input.conversationId ?? null,
   });
@@ -99,7 +111,12 @@ export async function* streamAssistantReplyEvents(
     }
   }
 
-  yield { type: "done", ...(reportedUsage ? { usage: reportedUsage } : {}) };
+  yield {
+    type: "done",
+    providerId,
+    modelId: input.model,
+    ...(reportedUsage ? { usage: reportedUsage } : {}),
+  };
 }
 
 /**

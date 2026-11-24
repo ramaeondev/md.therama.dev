@@ -25,8 +25,17 @@ export type WorkspacePreferences = {
   fontSize: number;
   wordWrap: boolean;
   autoSaveDelay: number;
-  aiProviderId: "gemini" | null;
+  /**
+   * Any registered provider ID: a built-in one, or a custom OpenAI-compatible
+   * instance. Only the ID is persisted; credentials never are.
+   */
+  aiProviderId: string | null;
   aiModelId: string | null;
+  /**
+   * Selected model per provider, so switching providers restores the model that
+   * was previously chosen for each one.
+   */
+  aiSelectedModels?: Record<string, string>;
 };
 
 export type WorkspaceState = {

@@ -36,6 +36,12 @@ export type ConversationMessage = {
   sequence: number;
   /** Present only when the provider reported usage for this reply. */
   usage?: ProviderUsage;
+  /**
+   * Provider and model that produced this assistant reply. Recorded per message
+   * so a conversation can span providers without losing attribution.
+   */
+  providerId?: string;
+  modelId?: string;
   /** Safe, user-facing failure summary. Never raw provider payloads. */
   error?: string;
 };
@@ -83,6 +89,8 @@ export function createConversationMessage(input: {
   status: ConversationMessageStatus;
   sequence?: number;
   usage?: ProviderUsage;
+  providerId?: string;
+  modelId?: string;
   error?: string;
   now?: string;
 }): ConversationMessage {
@@ -95,6 +103,8 @@ export function createConversationMessage(input: {
     status: input.status,
     sequence: input.sequence ?? 0,
     ...(input.usage ? { usage: input.usage } : {}),
+    ...(input.providerId ? { providerId: input.providerId } : {}),
+    ...(input.modelId ? { modelId: input.modelId } : {}),
     ...(input.error ? { error: input.error } : {}),
   };
 }

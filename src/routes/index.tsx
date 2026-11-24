@@ -38,12 +38,26 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { AssistantPanel } from "@/features/ai/assistant/AssistantPanel";
 import { ProviderError } from "@/features/ai/providers/errors";
-import type { ProviderModel } from "@/features/ai/providers/types";
-import { connectGemini, disconnectGemini, testGeminiConnection } from "@/features/ai/settings/providerConfiguration";
+import { openAiCompatibleProviderId } from "@/features/ai/providers/openaiCompatible";
+import { providerRegistry } from "@/features/ai/providers";
+import {
+  connectProvider,
+  disconnectProvider,
+  ensureCustomProvidersLoaded,
+  getActiveProviderId,
+  listConnectedProviders,
+  providerDisplayName,
+  removeCustomProvider,
+  saveCustomProvider,
+  setActiveProvider,
+  testProviderConnection,
+  type CustomProviderDefinition,
+} from "@/features/ai/settings/providerConfiguration";
+import type { ConnectedProviderSummary } from "@/features/ai/settings/ProviderSettingsPanel";
 import { MarkdownEditor, type MarkdownEditorHandle } from "@/features/editor/MarkdownEditor";
 import { getMarkdownHeadings, MarkdownPreview } from "@/features/editor/MarkdownPreview";
 import { WorkspaceExplorer, type ExplorerAction } from "@/features/workspace/WorkspaceExplorer";
-import { WorkspaceSettings, type ProviderConnectionStatus, type SettingsSection } from "@/features/workspace/WorkspaceSettings";
+import { WorkspaceSettings, type SettingsSection } from "@/features/workspace/WorkspaceSettings";
 import {
   createMarkdownDocument,
   createStarterState,
@@ -62,9 +76,16 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Markdown AI Workspace — Local-first Markdown" },
-      { name: "description", content: "A private, local-first Markdown workspace for organizing and editing your documentation." },
+      {
+        name: "description",
+        content:
+          "A private, local-first Markdown workspace for organizing and editing your documentation.",
+      },
       { property: "og:title", content: "Markdown AI Workspace" },
-      { property: "og:description", content: "A local-first space for your Markdown notes and documentation." },
+      {
+        property: "og:description",
+        content: "A local-first space for your Markdown notes and documentation.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -90,22 +111,36 @@ function WorkspacePage() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [providerStatus, setProviderStatus] = useState<ProviderConnectionStatus>("not-configured");
-  const [providerModels, setProviderModels] = useState<ProviderModel[]>([]);
+  const [connectedProviders, setConnectedProviders] = useState<ConnectedProviderSummary[]>([]);
+  const [activeProviderId, setActiveProviderId] = useState<string | null>(null);
+  const [customProviders, setCustomProviders] = useState<CustomProviderDefinition[]>([]);
+  const [busyProviderId, setBusyProviderId] = useState<string | null>(null);
+  const [providerStatuses, setProviderStatuses] = useState<
+    Record<string, "connecting" | "testing" | "failed">
+  >({});
+  const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>("general");
   const [createdWorkspaceId, setCreatedWorkspaceId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const skipNextSave = useRef(true);
-  const activeWorkspace = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ?? state.workspaces[0];
-  const documents = state.documents.filter((document) => document.workspaceId === state.activeWorkspaceId);
+  const activeWorkspace =
+    state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ??
+    state.workspaces[0];
+  const documents = state.documents.filter(
+    (document) => document.workspaceId === state.activeWorkspaceId,
+  );
   const folders = state.folders.filter((folder) => folder.workspaceId === state.activeWorkspaceId);
-  const activeDocument = documents.find((document) => document.id === state.activeDocumentId) ?? documents[0] ?? null;
+  const activeDocument =
+    documents.find((document) => document.id === state.activeDocumentId) ?? documents[0] ?? null;
   const openDocuments = state.openDocumentIds
     .map((id) => documents.find((document) => document.id === id))
     .filter((document): document is MarkdownDocument => Boolean(document));
-  const headings = useMemo(() => getMarkdownHeadings(activeDocument?.content ?? ""), [activeDocument?.content]);
+  const headings = useMemo(
+    () => getMarkdownHeadings(activeDocument?.content ?? ""),
+    [activeDocument?.content],
+  );
   const wordCount = (activeDocument?.content.trim().match(/\S+/g) ?? []).length;
   const charCount = activeDocument?.content.length ?? 0;
 
@@ -118,17 +153,23 @@ function WorkspacePage() {
         if (stored) {
           const migrated: WorkspaceState = {
             ...stored,
-            workspaces: stored.workspaces?.length ? stored.workspaces : createStarterState().workspaces,
+            workspaces: stored.workspaces?.length
+              ? stored.workspaces
+              : createStarterState().workspaces,
             folders: stored.folders ?? [],
             documents: stored.documents ?? [],
             openDocumentIds: stored.openDocumentIds ?? [],
             recentDocumentIds: stored.recentDocumentIds ?? [],
             preferences: { ...createStarterState().preferences, ...stored.preferences },
           };
-          const activeExists = migrated.workspaces.some((workspace) => workspace.id === migrated.activeWorkspaceId);
+          const activeExists = migrated.workspaces.some(
+            (workspace) => workspace.id === migrated.activeWorkspaceId,
+          );
           setState({
             ...migrated,
-            activeWorkspaceId: activeExists ? migrated.activeWorkspaceId : migrated.workspaces[0]?.id ?? createStarterState().activeWorkspaceId,
+            activeWorkspaceId: activeExists
+              ? migrated.activeWorkspaceId
+              : (migrated.workspaces[0]?.id ?? createStarterState().activeWorkspaceId),
           });
         }
         setHydrated(true);
@@ -148,6 +189,19 @@ function WorkspacePage() {
     if (!hydrated) return;
     document.documentElement.classList.toggle("dark", state.preferences.theme === "dark");
   }, [hydrated, state.preferences.theme]);
+
+  // Restore saved compatible-provider definitions so their adapters are
+  // registered before the user opens settings or sends a message. Keys are not
+  // restored: every provider needs its key re-entered after a reload.
+  useEffect(() => {
+    let cancelled = false;
+    void ensureCustomProvidersLoaded().then((definitions) => {
+      if (!cancelled) setCustomProviders(definitions);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -173,22 +227,35 @@ function WorkspacePage() {
     setState((current) => updater(current));
   }, []);
 
-  const openDocument = useCallback((id: string) => {
-    updateState((current) => ({
-      ...current,
-      activeDocumentId: id,
-      openDocumentIds: current.openDocumentIds.includes(id) ? current.openDocumentIds : [...current.openDocumentIds, id],
-      recentDocumentIds: [id, ...current.recentDocumentIds.filter((recentId) => recentId !== id)].slice(0, 10),
-    }));
-  }, [updateState]);
+  const openDocument = useCallback(
+    (id: string) => {
+      updateState((current) => ({
+        ...current,
+        activeDocumentId: id,
+        openDocumentIds: current.openDocumentIds.includes(id)
+          ? current.openDocumentIds
+          : [...current.openDocumentIds, id],
+        recentDocumentIds: [
+          id,
+          ...current.recentDocumentIds.filter((recentId) => recentId !== id),
+        ].slice(0, 10),
+      }));
+    },
+    [updateState],
+  );
 
-  const updateDocumentContent = useCallback((id: string, content: string) => {
-    const updatedAt = new Date().toISOString();
-    updateState((current) => ({
-      ...current,
-      documents: current.documents.map((document) => document.id === id ? { ...document, content, updatedAt } : document),
-    }));
-  }, [updateState]);
+  const updateDocumentContent = useCallback(
+    (id: string, content: string) => {
+      const updatedAt = new Date().toISOString();
+      updateState((current) => ({
+        ...current,
+        documents: current.documents.map((document) =>
+          document.id === id ? { ...document, content, updatedAt } : document,
+        ),
+      }));
+    },
+    [updateState],
+  );
 
   function createDocument(folderId: string | null = null, title?: string, content?: string) {
     const fallback = `Untitled ${documents.length + 1}`;
@@ -219,18 +286,27 @@ function WorkspacePage() {
     if (action.type === "new-document") createDocument(action.folderId);
     if (action.type === "new-folder") createFolder(action.folderId);
     if (action.type === "rename-document") {
-      const title = window.prompt("Rename document", action.document.title.replace(/\.(md|markdown|txt)$/i, ""));
-      if (title?.trim()) updateState((current) => ({
-        ...current,
-        documents: current.documents.map((document) => document.id === action.document.id ? renameMarkdownDocument(document, title) : document),
-      }));
+      const title = window.prompt(
+        "Rename document",
+        action.document.title.replace(/\.(md|markdown|txt)$/i, ""),
+      );
+      if (title?.trim())
+        updateState((current) => ({
+          ...current,
+          documents: current.documents.map((document) =>
+            document.id === action.document.id ? renameMarkdownDocument(document, title) : document,
+          ),
+        }));
     }
     if (action.type === "rename-folder") {
       const name = window.prompt("Rename folder", action.folder.name);
-      if (name?.trim()) updateState((current) => ({
-        ...current,
-        folders: current.folders.map((folder) => folder.id === action.folder.id ? { ...folder, name: name.trim() } : folder),
-      }));
+      if (name?.trim())
+        updateState((current) => ({
+          ...current,
+          folders: current.folders.map((folder) =>
+            folder.id === action.folder.id ? { ...folder, name: name.trim() } : folder,
+          ),
+        }));
     }
     if (action.type === "duplicate-document") {
       const copy = duplicateMarkdownDocument(action.document);
@@ -240,10 +316,14 @@ function WorkspacePage() {
     if (action.type === "delete-document") {
       if (!window.confirm(`Delete “${action.document.title}”? This cannot be undone.`)) return;
       updateState((current) => {
-        const remaining = current.documents.filter((document) => document.id !== action.document.id);
-        const nextActive = current.activeDocumentId === action.document.id
-          ? remaining.find((document) => document.workspaceId === current.activeWorkspaceId)?.id ?? null
-          : current.activeDocumentId;
+        const remaining = current.documents.filter(
+          (document) => document.id !== action.document.id,
+        );
+        const nextActive =
+          current.activeDocumentId === action.document.id
+            ? (remaining.find((document) => document.workspaceId === current.activeWorkspaceId)
+                ?.id ?? null)
+            : current.activeDocumentId;
         return {
           ...current,
           documents: remaining,
@@ -268,21 +348,29 @@ function WorkspacePage() {
         }
       }
     }
-    const contained = documents.filter((document) => document.folderId && descendants.has(document.folderId));
-    const confirmText = contained.length ? `Delete “${folder.name}” and its ${contained.length} document(s)?` : `Delete folder “${folder.name}”?`;
+    const contained = documents.filter(
+      (document) => document.folderId && descendants.has(document.folderId),
+    );
+    const confirmText = contained.length
+      ? `Delete “${folder.name}” and its ${contained.length} document(s)?`
+      : `Delete folder “${folder.name}”?`;
     if (!window.confirm(confirmText)) return;
     const removedDocumentIds = new Set(contained.map((document) => document.id));
     updateState((current) => {
-      const remaining = current.documents.filter((document) => !removedDocumentIds.has(document.id));
+      const remaining = current.documents.filter(
+        (document) => !removedDocumentIds.has(document.id),
+      );
       return {
         ...current,
         folders: current.folders.filter((item) => !descendants.has(item.id)),
         documents: remaining,
         openDocumentIds: current.openDocumentIds.filter((id) => !removedDocumentIds.has(id)),
         recentDocumentIds: current.recentDocumentIds.filter((id) => !removedDocumentIds.has(id)),
-        activeDocumentId: current.activeDocumentId && removedDocumentIds.has(current.activeDocumentId)
-          ? remaining.find((document) => document.workspaceId === current.activeWorkspaceId)?.id ?? null
-          : current.activeDocumentId,
+        activeDocumentId:
+          current.activeDocumentId && removedDocumentIds.has(current.activeDocumentId)
+            ? (remaining.find((document) => document.workspaceId === current.activeWorkspaceId)
+                ?.id ?? null)
+            : current.activeDocumentId,
       };
     });
   }
@@ -337,13 +425,16 @@ function WorkspacePage() {
       return {
         ...current,
         openDocumentIds: nextTabs,
-        activeDocumentId: current.activeDocumentId === id ? nextTabs.at(-1) ?? null : current.activeDocumentId,
+        activeDocumentId:
+          current.activeDocumentId === id ? (nextTabs.at(-1) ?? null) : current.activeDocumentId,
       };
     });
   }
 
   async function importFiles(files: FileList | File[]) {
-    const markdownFiles = Array.from(files).filter((file) => /\.(md|markdown|txt)$/i.test(file.name));
+    const markdownFiles = Array.from(files).filter((file) =>
+      /\.(md|markdown|txt)$/i.test(file.name),
+    );
     if (markdownFiles.length === 0) {
       toast.error("Choose a .md, .markdown, or .txt file.");
       return;
@@ -353,7 +444,9 @@ function WorkspacePage() {
       for (const file of markdownFiles) {
         createDocument(null, file.name, await file.text());
       }
-      toast.success(`Imported ${markdownFiles.length} Markdown ${markdownFiles.length === 1 ? "file" : "files"}`);
+      toast.success(
+        `Imported ${markdownFiles.length} Markdown ${markdownFiles.length === 1 ? "file" : "files"}`,
+      );
     } catch {
       toast.error("One or more files could not be read.");
     } finally {
@@ -362,7 +455,10 @@ function WorkspacePage() {
   }
 
   function exportDocument(document: MarkdownDocument) {
-    downloadBlob(new Blob([document.content], { type: "text/markdown;charset=utf-8" }), document.title);
+    downloadBlob(
+      new Blob([document.content], { type: "text/markdown;charset=utf-8" }),
+      document.title,
+    );
     toast.success(`Exported ${document.title}`);
   }
 
@@ -397,19 +493,23 @@ function WorkspacePage() {
       if (manifestFile) {
         const raw = JSON.parse(await manifestFile.async("string")) as unknown;
         if (!isWorkspaceBundle(raw)) throw new Error("Invalid workspace archive");
-        const newWorkspace = { ...raw.workspace, id: crypto.randomUUID(), name: `${raw.workspace.name} (imported)` };
+        const newWorkspace = {
+          ...raw.workspace,
+          id: crypto.randomUUID(),
+          name: `${raw.workspace.name} (imported)`,
+        };
         const folderIdMap = new Map(raw.folders.map((folder) => [folder.id, crypto.randomUUID()]));
         const importedFolders = raw.folders.map((folder) => ({
           ...folder,
           id: folderIdMap.get(folder.id) ?? crypto.randomUUID(),
           workspaceId: newWorkspace.id,
-          parentId: folder.parentId ? folderIdMap.get(folder.parentId) ?? null : null,
+          parentId: folder.parentId ? (folderIdMap.get(folder.parentId) ?? null) : null,
         }));
         const importedDocuments = raw.documents.map((document) => ({
           ...document,
           id: crypto.randomUUID(),
           workspaceId: newWorkspace.id,
-          folderId: document.folderId ? folderIdMap.get(document.folderId) ?? null : null,
+          folderId: document.folderId ? (folderIdMap.get(document.folderId) ?? null) : null,
         }));
         updateState((current) => ({
           ...current,
@@ -424,7 +524,9 @@ function WorkspacePage() {
         toast.success(`Imported ${newWorkspace.name}`);
         return;
       }
-      const markdownEntries = Object.values(zip.files).filter((entry) => !entry.dir && /\.(md|markdown|txt)$/i.test(entry.name));
+      const markdownEntries = Object.values(zip.files).filter(
+        (entry) => !entry.dir && /\.(md|markdown|txt)$/i.test(entry.name),
+      );
       if (markdownEntries.length === 0) throw new Error("No Markdown files found");
       const workspace = createWorkspaceState(file.name.replace(/\.zip$/i, ""));
       const foldersByPath = new Map<string, string>();
@@ -470,64 +572,242 @@ function WorkspacePage() {
     void importFiles(event.dataTransfer.files);
   }
 
-  async function handleConnectGemini(apiKey: string): Promise<boolean> {
-    setProviderStatus("connecting");
-    try {
-      const { models } = await connectGemini(apiKey);
-      setProviderModels(models);
-      setProviderStatus("connected");
-      updateState((current) => {
-        const selected = models.find((model) => model.id === current.preferences.aiModelId) ?? models[0];
-        return {
-          ...current,
-          preferences: {
-            ...current.preferences,
-            aiProviderId: "gemini",
-            aiModelId: selected?.id ?? null,
-          },
-        };
-      });
-      toast.success("Gemini connected");
-      return true;
-    } catch (error) {
-      setProviderStatus("failed");
-      setProviderModels([]);
-      toast.error(error instanceof ProviderError ? error.message : "Gemini connection failed. Check your key and try again.");
-      return false;
-    }
+  function refreshProviderState() {
+    setConnectedProviders(listConnectedProviders());
+    setActiveProviderId(getActiveProviderId());
   }
 
-  async function handleTestGemini() {
-    setProviderStatus("testing");
-    try {
-      const { models } = await testGeminiConnection();
-      setProviderModels(models);
-      setProviderStatus("connected");
+  const handleConnectProvider = useCallback(
+    async (providerId: string, apiKey: string): Promise<boolean> => {
+      setBusyProviderId(providerId);
+      setProviderStatuses((current) => ({ ...current, [providerId]: "connecting" }));
+      setProviderErrors((current) => {
+        const { [providerId]: _cleared, ...rest } = current;
+        return rest;
+      });
+      try {
+        const { models } = await connectProvider(providerId, apiKey);
+        refreshProviderState();
+        setProviderStatuses((current) => {
+          const { [providerId]: _cleared, ...rest } = current;
+          return rest;
+        });
+        updateState((current) => {
+          // Prefer the model previously chosen for this provider, then the first
+          // chat-capable one, so reconnecting never silently downgrades.
+          const saved = current.preferences.aiSelectedModels?.[providerId];
+          const selected =
+            models.find((model) => model.id === saved) ??
+            models.find((model) => model.capabilities.textGeneration) ??
+            models[0];
+          return {
+            ...current,
+            preferences: {
+              ...current.preferences,
+              aiProviderId: providerId,
+              aiModelId: selected?.id ?? null,
+              aiSelectedModels: {
+                ...(current.preferences.aiSelectedModels ?? {}),
+                ...(selected ? { [providerId]: selected.id } : {}),
+              },
+            },
+          };
+        });
+        toast.success(`${providerDisplayName(providerId)} connected`);
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof ProviderError
+            ? error.message
+            : "Connection failed. Check the key and endpoint, then try again.";
+        setProviderStatuses((current) => ({ ...current, [providerId]: "failed" }));
+        setProviderErrors((current) => ({ ...current, [providerId]: message }));
+        toast.error(message);
+        return false;
+      } finally {
+        setBusyProviderId(null);
+      }
+    },
+    [updateState],
+  );
+
+  const handleTestProvider = useCallback(
+    async (providerId: string): Promise<boolean> => {
+      setBusyProviderId(providerId);
+      setProviderStatuses((current) => ({ ...current, [providerId]: "testing" }));
+      try {
+        const { models } = await testProviderConnection(providerId);
+        refreshProviderState();
+        setProviderStatuses((current) => {
+          const { [providerId]: _cleared, ...rest } = current;
+          return rest;
+        });
+        setProviderErrors((current) => {
+          const { [providerId]: _cleared, ...rest } = current;
+          return rest;
+        });
+        updateState((current) => {
+          const saved = current.preferences.aiSelectedModels?.[providerId];
+          const nextModel = models.some((model) => model.id === saved)
+            ? (saved ?? null)
+            : current.preferences.aiProviderId === providerId &&
+                models.some((model) => model.id === current.preferences.aiModelId)
+              ? current.preferences.aiModelId
+              : (models.find((model) => model.capabilities.textGeneration)?.id ?? null);
+          return {
+            ...current,
+            preferences: {
+              ...current.preferences,
+              ...(nextModel
+                ? {
+                    aiSelectedModels: {
+                      ...(current.preferences.aiSelectedModels ?? {}),
+                      [providerId]: nextModel,
+                    },
+                  }
+                : {}),
+              ...(current.preferences.aiProviderId === providerId ? { aiModelId: nextModel } : {}),
+            },
+          };
+        });
+        toast.success(`${providerDisplayName(providerId)} connection is working`);
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof ProviderError
+            ? error.message
+            : "Connection failed. Check the key and endpoint, then try again.";
+        disconnectProvider(providerId);
+        refreshProviderState();
+        setProviderStatuses((current) => ({ ...current, [providerId]: "failed" }));
+        setProviderErrors((current) => ({ ...current, [providerId]: message }));
+        toast.error(message);
+        return false;
+      } finally {
+        setBusyProviderId(null);
+      }
+    },
+    [updateState],
+  );
+
+  const handleDisconnectProvider = useCallback(
+    (providerId: string) => {
+      disconnectProvider(providerId);
+      refreshProviderState();
+      setProviderStatuses((current) => {
+        const { [providerId]: _cleared, ...rest } = current;
+        return rest;
+      });
+      setProviderErrors((current) => {
+        const { [providerId]: _cleared, ...rest } = current;
+        return rest;
+      });
       updateState((current) => ({
         ...current,
         preferences: {
           ...current.preferences,
-          aiProviderId: "gemini",
-          aiModelId: models.some((model) => model.id === current.preferences.aiModelId)
-            ? current.preferences.aiModelId
-            : models[0]?.id ?? null,
+          ...(current.preferences.aiProviderId === providerId
+            ? { aiProviderId: null, aiModelId: null }
+            : {}),
         },
       }));
-      toast.success("Gemini connection is working");
-    } catch (error) {
-      disconnectGemini();
-      setProviderStatus("failed");
-      setProviderModels([]);
-      toast.error(error instanceof ProviderError ? error.message : "Gemini connection failed. Check your key and try again.");
-    }
-  }
+      toast.message(`${providerDisplayName(providerId)} key cleared from this session`);
+    },
+    [updateState],
+  );
 
-  function handleDisconnectGemini() {
-    disconnectGemini();
-    setProviderStatus("not-configured");
-    setProviderModels([]);
-    toast.message("Gemini key cleared from this session");
-  }
+  const handleSelectProvider = useCallback(
+    (providerId: string) => {
+      try {
+        setActiveProvider(providerId);
+        refreshProviderState();
+        updateState((current) => {
+          const models =
+            listConnectedProviders().find((entry) => entry.providerId === providerId)?.models ?? [];
+          const saved = current.preferences.aiSelectedModels?.[providerId];
+          const modelId = models.some((model) => model.id === saved)
+            ? (saved ?? null)
+            : (models.find((model) => model.capabilities.textGeneration)?.id ??
+              models[0]?.id ??
+              null);
+          return {
+            ...current,
+            preferences: { ...current.preferences, aiProviderId: providerId, aiModelId: modelId },
+          };
+        });
+      } catch (error) {
+        toast.error(
+          error instanceof ProviderError ? error.message : "That provider is not connected.",
+        );
+      }
+    },
+    [updateState],
+  );
+
+  const handleSelectModel = useCallback(
+    (providerId: string, modelId: string) => {
+      updateState((current) => ({
+        ...current,
+        preferences: {
+          ...current.preferences,
+          aiModelId:
+            current.preferences.aiProviderId === providerId
+              ? modelId
+              : current.preferences.aiModelId,
+          aiSelectedModels: {
+            ...(current.preferences.aiSelectedModels ?? {}),
+            [providerId]: modelId,
+          },
+        },
+      }));
+    },
+    [updateState],
+  );
+
+  const handleAddCustomProvider = useCallback(
+    async (input: { displayName: string; baseUrl: string; apiKey: string }): Promise<boolean> => {
+      const id = openAiCompatibleProviderId(input.displayName, [
+        ...providerRegistry.list().map((provider) => provider.descriptor.id),
+      ]);
+      try {
+        await saveCustomProvider({ id, displayName: input.displayName, baseUrl: input.baseUrl });
+      } catch (error) {
+        toast.error(
+          error instanceof ProviderError ? error.message : "That endpoint could not be used.",
+        );
+        return false;
+      }
+      const connected = await handleConnectProvider(id, input.apiKey);
+      setCustomProviders(await ensureCustomProvidersLoaded());
+      if (!connected) {
+        // Keep the definition so the user can fix the key without retyping the URL.
+        setProviderErrors((current) => ({
+          ...current,
+          [id]: current[id] ?? "Could not connect with that key.",
+        }));
+      }
+      return connected;
+    },
+    [handleConnectProvider],
+  );
+
+  const handleRemoveCustomProvider = useCallback(
+    async (providerId: string) => {
+      await removeCustomProvider(providerId);
+      refreshProviderState();
+      setCustomProviders(await ensureCustomProvidersLoaded());
+      updateState((current) => ({
+        ...current,
+        preferences: {
+          ...current.preferences,
+          ...(current.preferences.aiProviderId === providerId
+            ? { aiProviderId: null, aiModelId: null }
+            : {}),
+        },
+      }));
+    },
+    [updateState],
+  );
 
   function openAISettings() {
     setSettingsInitialSection("ai");
@@ -539,44 +819,157 @@ function WorkspacePage() {
   };
 
   return (
-    <main className="workspace-shell flex h-dvh min-h-[520px] flex-col overflow-hidden bg-background text-foreground" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
+    <main
+      className="workspace-shell flex h-dvh min-h-[520px] flex-col overflow-hidden bg-background text-foreground"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={handleDrop}
+    >
       <header className="flex h-12 shrink-0 items-center border-b border-border bg-background">
         <div className="flex h-full w-[276px] shrink-0 items-center border-r border-border px-3">
-          <Button variant="ghost" size="icon" className="mr-2 h-7 w-7 text-muted-foreground" title="Toggle sidebar" aria-label="Toggle sidebar">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mr-2 h-7 w-7 text-muted-foreground"
+            title="Toggle sidebar"
+            aria-label="Toggle sidebar"
+          >
             <ChevronLeft />
           </Button>
-          <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setWorkspaceMenuOpen((open) => !open)} aria-expanded={workspaceMenuOpen}>
-            <span className="truncate text-xs font-medium">{activeWorkspace?.name ?? "Workspace"}</span>
+          <button
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            onClick={() => setWorkspaceMenuOpen((open) => !open)}
+            aria-expanded={workspaceMenuOpen}
+          >
+            <span className="truncate text-xs font-medium">
+              {activeWorkspace?.name ?? "Workspace"}
+            </span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
-          <Button variant="ghost" size="icon" className="ml-1 h-7 w-7 text-muted-foreground" title="Create workspace" aria-label="Create workspace" onClick={createWorkspace}><FolderPlus /></Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-1 h-7 w-7 text-muted-foreground"
+            title="Create workspace"
+            aria-label="Create workspace"
+            onClick={createWorkspace}
+          >
+            <FolderPlus />
+          </Button>
           {workspaceMenuOpen && (
             <div className="absolute left-3 top-11 z-50 w-60 rounded-md border border-border bg-popover p-1 shadow-xl">
-              <div className="px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Workspaces on this device</div>
+              <div className="px-2 py-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                Workspaces on this device
+              </div>
               {state.workspaces.map((workspace) => (
-                <Button key={workspace.id} variant={workspace.id === state.activeWorkspaceId ? "secondary" : "ghost"} className="h-8 w-full justify-start text-xs" onClick={() => switchWorkspace(workspace.id)}>
-                  <span className="truncate">{workspace.name}</span>{workspace.id === state.activeWorkspaceId && <Check className="ml-auto" />}
+                <Button
+                  key={workspace.id}
+                  variant={workspace.id === state.activeWorkspaceId ? "secondary" : "ghost"}
+                  className="h-8 w-full justify-start text-xs"
+                  onClick={() => switchWorkspace(workspace.id)}
+                >
+                  <span className="truncate">{workspace.name}</span>
+                  {workspace.id === state.activeWorkspaceId && <Check className="ml-auto" />}
                 </Button>
               ))}
               <div className="my-1 border-t border-border" />
-              <Button variant="ghost" className="h-8 w-full justify-start text-xs" onClick={createWorkspace}><FolderPlus /> Create workspace</Button>
-              <Button variant="ghost" className="h-8 w-full justify-start text-xs" onClick={() => folderInputRef.current?.click()}><Upload /> Import workspace backup</Button>
-              <Button variant="ghost" className="h-8 w-full justify-start text-xs" onClick={() => void exportWorkspace()}><Download /> Export this workspace</Button>
+              <Button
+                variant="ghost"
+                className="h-8 w-full justify-start text-xs"
+                onClick={createWorkspace}
+              >
+                <FolderPlus /> Create workspace
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-8 w-full justify-start text-xs"
+                onClick={() => folderInputRef.current?.click()}
+              >
+                <Upload /> Import workspace backup
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-8 w-full justify-start text-xs"
+                onClick={() => void exportWorkspace()}
+              >
+                <Download /> Export this workspace
+              </Button>
             </div>
           )}
         </div>
         <div className="flex min-w-0 flex-1 items-center justify-between px-3">
           <div className="flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">
-            {activeDocument && <><span className="truncate">{activeDocument.title}</span><ChevronRight className="h-3 w-3" /><span>{mode === "split" ? "Split view" : mode === "editor" ? "Editor" : "Preview"}</span></>}
+            {activeDocument && (
+              <>
+                <span className="truncate">{activeDocument.title}</span>
+                <ChevronRight className="h-3 w-3" />
+                <span>
+                  {mode === "split" ? "Split view" : mode === "editor" ? "Editor" : "Preview"}
+                </span>
+              </>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <div className="hidden items-center gap-1 text-[10px] text-muted-foreground sm:flex" aria-live="polite">
-              {saveStatus === "saving" ? <><LoaderCircle className="h-3 w-3 animate-spin" /> Saving</> : saveStatus === "error" ? <><span className="h-1.5 w-1.5 rounded-full bg-destructive" /> Save failed</> : <><Check className="h-3 w-3 text-primary" /> Saved locally</>}
+            <div
+              className="hidden items-center gap-1 text-[10px] text-muted-foreground sm:flex"
+              aria-live="polite"
+            >
+              {saveStatus === "saving" ? (
+                <>
+                  <LoaderCircle className="h-3 w-3 animate-spin" /> Saving
+                </>
+              ) : saveStatus === "error" ? (
+                <>
+                  <span className="h-1.5 w-1.5 rounded-full bg-destructive" /> Save failed
+                </>
+              ) : (
+                <>
+                  <Check className="h-3 w-3 text-primary" /> Saved locally
+                </>
+              )}
             </div>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Import Markdown file" aria-label="Import Markdown file" onClick={() => fileInputRef.current?.click()}><Upload /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Export workspace" aria-label="Export workspace" onClick={() => void exportWorkspace()}><FileDown /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Preferences" aria-label="Preferences" onClick={() => { setSettingsInitialSection("general"); setSettingsOpen(true); }}><Settings2 /></Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title={assistantOpen ? "Hide assistant panel" : "Show assistant panel"} aria-label={assistantOpen ? "Hide assistant panel" : "Show assistant panel"} onClick={() => setAssistantOpen((open) => !open)}>{assistantOpen ? <PanelRightClose /> : <PanelRightOpen />}</Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              title="Import Markdown file"
+              aria-label="Import Markdown file"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              title="Export workspace"
+              aria-label="Export workspace"
+              onClick={() => void exportWorkspace()}
+            >
+              <FileDown />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              title="Preferences"
+              aria-label="Preferences"
+              onClick={() => {
+                setSettingsInitialSection("general");
+                setSettingsOpen(true);
+              }}
+            >
+              <Settings2 />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              title={assistantOpen ? "Hide assistant panel" : "Show assistant panel"}
+              aria-label={assistantOpen ? "Hide assistant panel" : "Show assistant panel"}
+              onClick={() => setAssistantOpen((open) => !open)}
+            >
+              {assistantOpen ? <PanelRightClose /> : <PanelRightOpen />}
+            </Button>
           </div>
         </div>
       </header>
@@ -589,63 +982,164 @@ function WorkspacePage() {
               documents={documents}
               folders={folders}
               activeDocumentId={activeDocument?.id ?? null}
-              recentDocumentIds={state.recentDocumentIds.filter((id) => documents.some((document) => document.id === id))}
+              recentDocumentIds={state.recentDocumentIds.filter((id) =>
+                documents.some((document) => document.id === id),
+              )}
               onOpenDocument={openDocument}
               onAction={handleExplorerAction}
             />
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize="60%" minSize="36%" className="min-w-0">
-            <section className="flex h-full min-h-0 flex-col bg-background" aria-label="Markdown workspace editor">
+            <section
+              className="flex h-full min-h-0 flex-col bg-background"
+              aria-label="Markdown workspace editor"
+            >
               <div className="flex h-10 shrink-0 items-stretch border-b border-border bg-background">
                 <div className="flex min-w-0 flex-1 overflow-x-auto">
                   {openDocuments.map((document) => (
-                    <div key={document.id} className={`group flex max-w-48 shrink-0 items-center border-r border-border ${activeDocument?.id === document.id ? "bg-card" : "bg-muted/30"}`}>
-                      <button onClick={() => openDocument(document.id)} className="flex h-full min-w-0 flex-1 items-center gap-2 px-3 text-xs">
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${saveStatus === "saving" && activeDocument?.id === document.id ? "bg-primary" : "bg-muted-foreground/50"}`} />
+                    <div
+                      key={document.id}
+                      className={`group flex max-w-48 shrink-0 items-center border-r border-border ${activeDocument?.id === document.id ? "bg-card" : "bg-muted/30"}`}
+                    >
+                      <button
+                        onClick={() => openDocument(document.id)}
+                        className="flex h-full min-w-0 flex-1 items-center gap-2 px-3 text-xs"
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${saveStatus === "saving" && activeDocument?.id === document.id ? "bg-primary" : "bg-muted-foreground/50"}`}
+                        />
                         <span className="truncate">{document.title}</span>
                       </button>
-                      <Button variant="ghost" size="icon" className="mr-1 h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100" title="Close tab" aria-label={`Close ${document.title} tab`} onClick={(event) => closeTab(document.id, event)}><X /></Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="mr-1 h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                        title="Close tab"
+                        aria-label={`Close ${document.title} tab`}
+                        onClick={(event) => closeTab(document.id, event)}
+                      >
+                        <X />
+                      </Button>
                     </div>
                   ))}
                 </div>
-                <Button variant="ghost" size="icon" className="m-1 h-7 w-7 shrink-0 text-muted-foreground" title="New file" aria-label="New file" onClick={() => createDocument()}><FilePlus2 /></Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="m-1 h-7 w-7 shrink-0 text-muted-foreground"
+                  title="New file"
+                  aria-label="New file"
+                  onClick={() => createDocument()}
+                >
+                  <FilePlus2 />
+                </Button>
               </div>
 
               <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-y-1 border-b border-border px-2 py-1">
                 <div className="flex items-center gap-0.5">
-                  <ToolbarButton label="Bold" onClick={() => editorRef.current?.format("**", "**")}><Bold /></ToolbarButton>
-                  <ToolbarButton label="Italic" onClick={() => editorRef.current?.format("_", "_")}><Italic /></ToolbarButton>
+                  <ToolbarButton label="Bold" onClick={() => editorRef.current?.format("**", "**")}>
+                    <Bold />
+                  </ToolbarButton>
+                  <ToolbarButton label="Italic" onClick={() => editorRef.current?.format("_", "_")}>
+                    <Italic />
+                  </ToolbarButton>
                   <span className="mx-1 h-4 w-px bg-border" />
-                  <ToolbarButton label="Heading 1" onClick={() => editorRef.current?.format("# ")}><Heading1 /></ToolbarButton>
-                  <ToolbarButton label="Heading 2" onClick={() => editorRef.current?.format("## ")}><Heading2 /></ToolbarButton>
+                  <ToolbarButton label="Heading 1" onClick={() => editorRef.current?.format("# ")}>
+                    <Heading1 />
+                  </ToolbarButton>
+                  <ToolbarButton label="Heading 2" onClick={() => editorRef.current?.format("## ")}>
+                    <Heading2 />
+                  </ToolbarButton>
                   <span className="mx-1 h-4 w-px bg-border" />
-                  <ToolbarButton label="Bulleted list" onClick={() => editorRef.current?.format("- ")}><List /></ToolbarButton>
-                  <ToolbarButton label="Numbered list" onClick={() => editorRef.current?.format("1. ")}><ListOrdered /></ToolbarButton>
-                  <ToolbarButton label="Quote" onClick={() => editorRef.current?.format("> ")}><Quote /></ToolbarButton>
-                  <ToolbarButton label="Code block" onClick={() => editorRef.current?.format("```\n", "\n``` ")}><Braces /></ToolbarButton>
-                  <ToolbarButton label="Table" onClick={() => editorRef.current?.format("| Column | Column |\n| --- | --- |\n| Cell | Cell |\n")}><Table2 /></ToolbarButton>
+                  <ToolbarButton
+                    label="Bulleted list"
+                    onClick={() => editorRef.current?.format("- ")}
+                  >
+                    <List />
+                  </ToolbarButton>
+                  <ToolbarButton
+                    label="Numbered list"
+                    onClick={() => editorRef.current?.format("1. ")}
+                  >
+                    <ListOrdered />
+                  </ToolbarButton>
+                  <ToolbarButton label="Quote" onClick={() => editorRef.current?.format("> ")}>
+                    <Quote />
+                  </ToolbarButton>
+                  <ToolbarButton
+                    label="Code block"
+                    onClick={() => editorRef.current?.format("```\n", "\n``` ")}
+                  >
+                    <Braces />
+                  </ToolbarButton>
+                  <ToolbarButton
+                    label="Table"
+                    onClick={() =>
+                      editorRef.current?.format(
+                        "| Column | Column |\n| --- | --- |\n| Cell | Cell |\n",
+                      )
+                    }
+                  >
+                    <Table2 />
+                  </ToolbarButton>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="mr-1 hidden items-center gap-0.5 border-r border-border pr-1 sm:flex">
                     {(["editor", "split", "preview"] as const).map((viewMode) => {
-                      const Icon = viewMode === "editor" ? AlignLeft : viewMode === "split" ? SplitSquareHorizontal : Search;
+                      const Icon =
+                        viewMode === "editor"
+                          ? AlignLeft
+                          : viewMode === "split"
+                            ? SplitSquareHorizontal
+                            : Search;
                       return (
-                        <Button key={viewMode} variant={mode === viewMode ? "secondary" : "ghost"} size="icon" className="h-7 w-7" title={`${viewMode.slice(0, 1).toUpperCase()}${viewMode.slice(1)} view`} aria-label={`${viewMode.slice(0, 1).toUpperCase()}${viewMode.slice(1)} view`} onClick={() => setMode(viewMode)}><Icon /></Button>
+                        <Button
+                          key={viewMode}
+                          variant={mode === viewMode ? "secondary" : "ghost"}
+                          size="icon"
+                          className="h-7 w-7"
+                          title={`${viewMode.slice(0, 1).toUpperCase()}${viewMode.slice(1)} view`}
+                          aria-label={`${viewMode.slice(0, 1).toUpperCase()}${viewMode.slice(1)} view`}
+                          onClick={() => setMode(viewMode)}
+                        >
+                          <Icon />
+                        </Button>
                       );
                     })}
                   </div>
-                  <Button variant={showOutline ? "secondary" : "ghost"} size="icon" className="h-7 w-7 text-muted-foreground" title="Document outline" aria-label="Document outline" onClick={() => setShowOutline((visible) => !visible)}><MoreHorizontal /></Button>
+                  <Button
+                    variant={showOutline ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground"
+                    title="Document outline"
+                    aria-label="Document outline"
+                    onClick={() => setShowOutline((visible) => !visible)}
+                  >
+                    <MoreHorizontal />
+                  </Button>
                 </div>
               </div>
 
               {showOutline && (
                 <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border bg-muted/20 px-3 py-2">
-                  <span className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground">Outline</span>
-                  {headings.length === 0 && <span className="text-xs text-muted-foreground">Add headings to navigate this document.</span>}
+                  <span className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground">
+                    Outline
+                  </span>
+                  {headings.length === 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      Add headings to navigate this document.
+                    </span>
+                  )}
                   {headings.map((heading, index) => (
-                    <Button key={`${heading.id}-${index}`} variant="ghost" className="h-6 shrink-0 text-xs font-normal" onClick={() => editorRef.current?.jumpToHeading(heading.text)}>
-                      <span className="text-muted-foreground">{"#".repeat(heading.level)}</span>{heading.text}
+                    <Button
+                      key={`${heading.id}-${index}`}
+                      variant="ghost"
+                      className="h-6 shrink-0 text-xs font-normal"
+                      onClick={() => editorRef.current?.jumpToHeading(heading.text)}
+                    >
+                      <span className="text-muted-foreground">{"#".repeat(heading.level)}</span>
+                      {heading.text}
                     </Button>
                   ))}
                 </div>
@@ -654,7 +1148,9 @@ function WorkspacePage() {
               {activeDocument ? (
                 <div className="flex min-h-0 flex-1">
                   {(mode === "editor" || mode === "split") && (
-                    <div className={`min-h-0 min-w-0 flex-1 overflow-hidden ${mode === "split" ? "border-r border-border" : ""}`}>
+                    <div
+                      className={`min-h-0 min-w-0 flex-1 overflow-hidden ${mode === "split" ? "border-r border-border" : ""}`}
+                    >
                       <MarkdownEditor
                         ref={editorRef}
                         value={activeDocument.content}
@@ -665,7 +1161,9 @@ function WorkspacePage() {
                     </div>
                   )}
                   {(mode === "preview" || mode === "split") && (
-                    <ScrollArea className={`h-full min-w-0 ${mode === "split" ? "flex-1" : "w-full"}`}>
+                    <ScrollArea
+                      className={`h-full min-w-0 ${mode === "split" ? "flex-1" : "w-full"}`}
+                    >
                       <MarkdownPreview content={activeDocument.content} />
                     </ScrollArea>
                   )}
@@ -673,20 +1171,43 @@ function WorkspacePage() {
               ) : (
                 <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
                   <div className="max-w-sm">
-                    <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-card"><FilePlus2 className="h-5 w-5 text-muted-foreground" /></div>
+                    <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-card">
+                      <FilePlus2 className="h-5 w-5 text-muted-foreground" />
+                    </div>
                     <h2 className="text-sm font-medium">No document open</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">Create a Markdown file or import one to start writing.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Create a Markdown file or import one to start writing.
+                    </p>
                     <div className="mt-4 flex justify-center gap-2">
-                      <Button size="sm" onClick={() => createDocument()}><FilePlus2 /> New file</Button>
-                      <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload /> Import</Button>
+                      <Button size="sm" onClick={() => createDocument()}>
+                        <FilePlus2 /> New file
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Upload /> Import
+                      </Button>
                     </div>
                   </div>
                 </div>
               )}
 
               <footer className="flex h-7 shrink-0 items-center justify-between border-t border-border bg-background px-3 text-[10px] text-muted-foreground">
-                <div className="flex items-center gap-3"><span>Markdown</span><span>{activeDocument ? activeDocument.title.split(".").at(-1)?.toUpperCase() : "No file"}</span></div>
-                <div className="flex items-center gap-3"><span>{wordCount} words</span><span>{charCount} characters</span><span>UTF-8</span></div>
+                <div className="flex items-center gap-3">
+                  <span>Markdown</span>
+                  <span>
+                    {activeDocument
+                      ? activeDocument.title.split(".").at(-1)?.toUpperCase()
+                      : "No file"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span>{wordCount} words</span>
+                  <span>{charCount} characters</span>
+                  <span>UTF-8</span>
+                </div>
               </footer>
             </section>
           </ResizablePanel>
@@ -700,9 +1221,19 @@ function WorkspacePage() {
                 documentTitle={activeDocument?.title ?? null}
                 documentContent={activeDocument?.content ?? ""}
                 prompts={suggestedPrompts}
-                isConnected={providerStatus === "connected" && state.preferences.aiProviderId === "gemini"}
+                isConnected={
+                  Boolean(state.preferences.aiProviderId) &&
+                  connectedProviders.some(
+                    (entry) => entry.providerId === state.preferences.aiProviderId,
+                  )
+                }
                 providerId={state.preferences.aiProviderId}
-                modelId={state.preferences.aiProviderId === "gemini" ? state.preferences.aiModelId : null}
+                providerLabel={
+                  state.preferences.aiProviderId
+                    ? providerDisplayName(state.preferences.aiProviderId)
+                    : null
+                }
+                modelId={state.preferences.aiModelId}
                 onConfigure={openAISettings}
               />
             </ResizablePanel>
@@ -710,27 +1241,78 @@ function WorkspacePage() {
         </ResizablePanelGroup>
       </div>
 
-      <input ref={fileInputRef} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple className="hidden" onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ""; }} />
-      <input ref={folderInputRef} type="file" accept=".zip,application/zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importWorkspace(file); event.target.value = ""; }} />
-      {importing && <div className="fixed bottom-10 right-4 z-50 flex items-center gap-2 rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-lg"><LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Importing files…</div>}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".md,.markdown,.txt,text/markdown,text/plain"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          if (event.target.files) void importFiles(event.target.files);
+          event.target.value = "";
+        }}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        accept=".zip,application/zip"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void importWorkspace(file);
+          event.target.value = "";
+        }}
+      />
+      {importing && (
+        <div className="fixed bottom-10 right-4 z-50 flex items-center gap-2 rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-lg">
+          <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Importing files…
+        </div>
+      )}
       <WorkspaceSettings
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         preferences={state.preferences}
         onChange={setPreferences}
         initialSection={settingsInitialSection}
-        providerStatus={providerStatus}
-        providerModels={providerModels}
-        onConnectGemini={handleConnectGemini}
-        onTestGemini={() => void handleTestGemini()}
-        onDisconnectGemini={handleDisconnectGemini}
+        connectedProviders={connectedProviders}
+        activeProviderId={activeProviderId}
+        customProviders={customProviders}
+        busyProviderId={busyProviderId}
+        statusByProvider={providerStatuses}
+        errorByProvider={providerErrors}
+        onConnectProvider={handleConnectProvider}
+        onTestProvider={handleTestProvider}
+        onDisconnectProvider={handleDisconnectProvider}
+        onSelectProvider={handleSelectProvider}
+        onSelectModel={handleSelectModel}
+        onAddCustomProvider={handleAddCustomProvider}
+        onRemoveCustomProvider={handleRemoveCustomProvider}
       />
     </main>
   );
 }
 
-function ToolbarButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
-  return <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title={label} aria-label={label} onClick={onClick}>{children}</Button>;
+function ToolbarButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 text-muted-foreground"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
 }
 
 function downloadBlob(blob: Blob, fileName: string) {
@@ -748,12 +1330,22 @@ function safeFileName(fileName: string) {
   return fileName.replace(/[\\/:*?"<>|]/g, "-");
 }
 
-function isWorkspaceBundle(value: unknown): value is NonNullable<ReturnType<typeof createWorkspaceBundle>> {
+function isWorkspaceBundle(
+  value: unknown,
+): value is NonNullable<ReturnType<typeof createWorkspaceBundle>> {
   if (!value || typeof value !== "object") return false;
   const bundle = value as Partial<NonNullable<ReturnType<typeof createWorkspaceBundle>>>;
-  return bundle.format === "markdown-ai-workspace" && bundle.version === 1
-    && typeof bundle.workspace?.name === "string"
-    && Array.isArray(bundle.folders)
-    && Array.isArray(bundle.documents)
-    && bundle.documents.every((document) => typeof document.id === "string" && typeof document.title === "string" && typeof document.content === "string");
+  return (
+    bundle.format === "markdown-ai-workspace" &&
+    bundle.version === 1 &&
+    typeof bundle.workspace?.name === "string" &&
+    Array.isArray(bundle.folders) &&
+    Array.isArray(bundle.documents) &&
+    bundle.documents.every(
+      (document) =>
+        typeof document.id === "string" &&
+        typeof document.title === "string" &&
+        typeof document.content === "string",
+    )
+  );
 }

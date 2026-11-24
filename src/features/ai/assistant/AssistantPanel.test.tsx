@@ -26,7 +26,15 @@ const baseProps = {
   onConfigure: () => {},
 };
 
-function emitText(text: string, usage?: { inputTokens: number; outputTokens: number; totalTokens: number; source: "provider_reported" }) {
+function emitText(
+  text: string,
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    source: "provider_reported";
+  },
+) {
   return async function* stream() {
     for (const part of text.split("")) yield { type: "text" as const, text: part };
     yield { type: "done" as const, ...(usage ? { usage } : {}) };
@@ -48,22 +56,30 @@ async function typeAndSend(text: string) {
 }
 
 async function waitForConversationMessages(workspaceId: string, expected: number) {
-  await waitFor(async () => {
-    const conversations = await listConversations(workspaceId);
-    const first = conversations[0];
-    if (!first) throw new Error("no conversation yet");
-    const messages = await listMessages(first.id);
-    expect(messages).toHaveLength(expected);
-  }, { timeout: 3000 });
+  await waitFor(
+    async () => {
+      const conversations = await listConversations(workspaceId);
+      const first = conversations[0];
+      if (!first) throw new Error("no conversation yet");
+      const messages = await listMessages(first.id);
+      expect(messages).toHaveLength(expected);
+    },
+    { timeout: 3000 },
+  );
 }
 
 /** Waits until a conversation with this title has its messages persisted. */
 async function waitForConversationTitled(workspaceId: string, title: string, messageCount = 2) {
-  await waitFor(async () => {
-    const conversation = (await listConversations(workspaceId)).find((entry) => entry.title === title);
-    if (!conversation) throw new Error(`conversation "${title}" not saved yet`);
-    expect(await listMessages(conversation.id)).toHaveLength(messageCount);
-  }, { timeout: 3000 });
+  await waitFor(
+    async () => {
+      const conversation = (await listConversations(workspaceId)).find(
+        (entry) => entry.title === title,
+      );
+      if (!conversation) throw new Error(`conversation "${title}" not saved yet`);
+      expect(await listMessages(conversation.id)).toHaveLength(messageCount);
+    },
+    { timeout: 3000 },
+  );
 }
 
 /** Clicks the history-list button for a conversation title (not the header). */
@@ -114,7 +130,12 @@ describe("Assistant conversation UI", () => {
   it("persists a conversation and its messages after sending", async () => {
     streamMock.mockImplementation((input: { conversationId?: string }) => {
       expect(input.conversationId).toBeTruthy();
-      return emitText("Hi there", { inputTokens: 5, outputTokens: 2, totalTokens: 7, source: "provider_reported" })();
+      return emitText("Hi there", {
+        inputTokens: 5,
+        outputTokens: 2,
+        totalTokens: 7,
+        source: "provider_reported",
+      })();
     });
     setup();
     await typeAndSend("Hello assistant");
@@ -183,7 +204,9 @@ describe("Assistant conversation UI", () => {
     });
     // The user message is never lost.
     const conversation = await onlyConversation(baseProps.workspaceId);
-    expect((await listMessages(conversation.id)).filter((message) => message.role === "user")).toHaveLength(1);
+    expect(
+      (await listMessages(conversation.id)).filter((message) => message.role === "user"),
+    ).toHaveLength(1);
   });
 
   it("stores only one assistant message even when the stream emits many chunks", async () => {
@@ -195,7 +218,9 @@ describe("Assistant conversation UI", () => {
       const conversation = await onlyConversation(baseProps.workspaceId);
       const messages = await listMessages(conversation.id);
       expect(messages.filter((message) => message.role === "assistant")).toHaveLength(1);
-      expect(messages.find((message) => message.role === "assistant")?.content).toBe("chunk after chunk");
+      expect(messages.find((message) => message.role === "assistant")?.content).toBe(
+        "chunk after chunk",
+      );
     });
   });
 
@@ -270,7 +295,11 @@ describe("Assistant conversation UI", () => {
     streamMock.mockImplementation(() => {
       return async function* stream() {
         yield { type: "text" as const, text: "" };
-        throw Object.assign(new Error("boom"), { name: "ProviderError", code: "provider_unavailable", message: "The AI provider is temporarily unavailable. Try again later." });
+        throw Object.assign(new Error("boom"), {
+          name: "ProviderError",
+          code: "provider_unavailable",
+          message: "The AI provider is temporarily unavailable. Try again later.",
+        });
       };
     });
     setup();
@@ -280,5 +309,80 @@ describe("Assistant conversation UI", () => {
     const conversation = await onlyConversation(baseProps.workspaceId);
     const messages = await listMessages(conversation.id);
     expect(messages.find((message) => message.role === "assistant")?.status).toBe("failed");
+  });
+
+  it("labels a reply with the provider that actually served it", async () => {
+    streamMock.mockImplementation(() =>
+      (async function* stream() {
+        yield { type: "text" as const, text: "OpenAI answer" };
+        yield { type: "done" as const, providerId: "openai", modelId: "gpt-4.1-mini" };
+      })(),
+    );
+    render(
+      <AssistantPanel
+        {...baseProps}
+        providerId="openai"
+        providerLabel="OpenAI"
+        modelId="gpt-4.1-mini"
+      />,
+    );
+    await typeAndSend("Hello");
+
+    await waitForConversationMessages(baseProps.workspaceId, 2);
+    const conversation = await onlyConversation(baseProps.workspaceId);
+    const messages = await listMessages(conversation.id);
+    const assistant = messages.find((message) => message.role === "assistant");
+
+    // Attribution comes from the terminal event, not just the current props.
+    expect(assistant).toMatchObject({
+      providerId: "openai",
+      modelId: "gpt-4.1-mini",
+      content: "OpenAI answer",
+    });
+    expect(conversation).toMatchObject({ providerId: "openai", modelId: "gpt-4.1-mini" });
+    expect(screen.getByText("OpenAI")).toBeInTheDocument();
+  });
+
+  it("keeps per-message attribution when the provider changes between turns", async () => {
+    streamMock.mockImplementation(() =>
+      (async function* stream() {
+        yield { type: "text" as const, text: "Gemini answer" };
+        yield { type: "done" as const, providerId: "gemini", modelId: "gemini-test" };
+      })(),
+    );
+    const { unmount } = render(<AssistantPanel {...baseProps} />);
+    await typeAndSend("First question");
+    await waitForConversationTitled(baseProps.workspaceId, "First question");
+    unmount();
+
+    // The same conversation is reopened with a different active provider.
+    streamMock.mockImplementation(() =>
+      (async function* stream() {
+        yield { type: "text" as const, text: "OpenAI follow-up" };
+        yield { type: "done" as const, providerId: "openai", modelId: "gpt-4.1-mini" };
+      })(),
+    );
+    render(
+      <AssistantPanel
+        {...baseProps}
+        providerId="openai"
+        providerLabel="OpenAI"
+        modelId="gpt-4.1-mini"
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("Gemini answer")).toBeInTheDocument());
+    await typeAndSend("Second question");
+    await waitForConversationTitled(baseProps.workspaceId, "First question", 4);
+
+    const conversation = await onlyConversation(baseProps.workspaceId);
+    const assistants = (await listMessages(conversation.id)).filter(
+      (message) => message.role === "assistant",
+    );
+    expect(
+      assistants.map((message) => [message.providerId, message.modelId, message.content]),
+    ).toEqual([
+      ["gemini", "gemini-test", "Gemini answer"],
+      ["openai", "gpt-4.1-mini", "OpenAI follow-up"],
+    ]);
   });
 });
