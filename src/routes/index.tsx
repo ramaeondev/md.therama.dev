@@ -694,11 +694,14 @@ function WorkspacePage() {
           {assistantOpen && (
             <ResizablePanel defaultSize="21%" minSize="17%" maxSize="30%" className="min-w-0">
               <AssistantPanel
+                workspaceId={state.activeWorkspaceId}
                 workspaceName={activeWorkspace?.name ?? "Workspace"}
+                documentId={activeDocument?.id ?? null}
                 documentTitle={activeDocument?.title ?? null}
                 documentContent={activeDocument?.content ?? ""}
                 prompts={suggestedPrompts}
                 isConnected={providerStatus === "connected" && state.preferences.aiProviderId === "gemini"}
+                providerId={state.preferences.aiProviderId}
                 modelId={state.preferences.aiProviderId === "gemini" ? state.preferences.aiModelId : null}
                 onConfigure={openAISettings}
               />

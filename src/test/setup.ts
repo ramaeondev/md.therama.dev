@@ -5,6 +5,12 @@ Object.defineProperty(window, "scrollTo", {
   value: () => {},
 });
 
+// jsdom does not implement element scrolling; the Assistant relies on it.
+Object.defineProperty(Element.prototype, "scrollIntoView", {
+  writable: true,
+  value: () => {},
+});
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({

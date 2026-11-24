@@ -121,6 +121,48 @@ describe("AI provider foundation", () => {
     expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-goog-api-key")).toBe("test-key");
   });
 
+  it("reports streaming usage from the final Gemini chunk", async () => {
+    const encoded = new TextEncoder();
+    const chunks = [
+      'data: {"candidates":[{"content":{"parts":[{"text":"hello "}]}}]}\n\n',
+      'data: {"candidates":[{"content":{"parts":[{"text":"world"}]}}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":2,"totalTokenCount":11}}\n\n',
+    ];
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoded.encode(chunk));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream, { status: 200 })));
+    const session = geminiProvider.initialize({ apiKey: "test-key" });
+
+    const events = [];
+    for await (const event of session.streamTextEvents!(request)) events.push(event);
+
+    expect(events).toEqual([
+      { type: "text", text: "hello " },
+      { type: "text", text: "world" },
+      { type: "usage", usage: { inputTokens: 9, outputTokens: 2, totalTokens: 11, source: "provider_reported" } },
+    ]);
+  });
+
+  it("streams text without a usage event when Gemini reports no token metadata", async () => {
+    const encoded = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoded.encode('data: {"candidates":[{"content":{"parts":[{"text":"plain"}]}}]}\n\n'));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream, { status: 200 })));
+    const session = geminiProvider.initialize({ apiKey: "test-key" });
+
+    const events = [];
+    for await (const event of session.streamTextEvents!(request)) events.push(event);
+
+    expect(events).toEqual([{ type: "text", text: "plain" }]);
+  });
+
   it("does not leak provider response text through normalized errors", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({ error: { code: 401, status: "UNAUTHENTICATED", message: "private-key-value rejected" } }, 401),

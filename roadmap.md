@@ -5,5 +5,6 @@
 - [x] Milestone 2 Phase B: Gemini discovery, connection checks, text generation, and streaming.
 - [x] Milestone 2 Phase D: Gemini settings, connection testing, dynamic model discovery, and saved non-sensitive model preference.
 - [x] Milestone 2 Phase E: Gemini streaming assistant, optional active-document context, cancellation, retry, and in-session conversations.
-- Next: Milestone 2 Phase F, conversation persistence and usage tracking; then Phase C, OpenAI integration.
+- [x] Milestone 2 Phase F: persistent conversations, provider-independent usage tracking, and the AI usage dashboard.
+- Next: Milestone 2 Phase C, OpenAI integration.
 - Later milestone (out of scope): Workspace Intelligence (RAG).

@@ -12,9 +12,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { ProviderModel } from "@/features/ai/providers/types";
+import { UsageDashboard } from "@/features/ai/usage/UsageDashboard";
 import type { WorkspacePreferences } from "./types";
 
-export type SettingsSection = "general" | "editor" | "storage" | "ai";
+export type SettingsSection = "general" | "editor" | "storage" | "ai" | "usage";
 export type ProviderConnectionStatus = "not-configured" | "connecting" | "testing" | "connected" | "failed";
 
 type WorkspaceSettingsProps = {
@@ -63,9 +64,9 @@ export function WorkspaceSettings({
         </DialogHeader>
         <div className="grid min-h-[330px] grid-cols-[170px_1fr] overflow-hidden">
           <nav className="border-r border-border p-3" aria-label="Settings sections">
-            {(["general", "editor", "storage", "ai"] as const).map((section) => (
+            {(["general", "editor", "storage", "ai", "usage"] as const).map((section) => (
               <Button key={section} variant={activeSection === section ? "secondary" : "ghost"} className="mb-1 h-9 w-full justify-start text-xs capitalize" onClick={() => setActiveSection(section)}>
-                {section === "ai" ? "AI providers" : section}
+                {section === "ai" ? "AI providers" : section === "usage" ? "AI usage" : section}
               </Button>
             ))}
           </nav>
@@ -197,6 +198,7 @@ export function WorkspaceSettings({
                 </label>
               </section>
             )}
+            {activeSection === "usage" && <UsageDashboard />}
           </div>
         </div>
       </DialogContent>

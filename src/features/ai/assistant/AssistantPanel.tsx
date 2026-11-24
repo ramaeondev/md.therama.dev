@@ -1,50 +1,90 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronRight, FilePlus2, LoaderCircle, RotateCcw, Sparkles, Square } from "lucide-react";
+import {
+  ChevronRight,
+  FilePlus2,
+  History,
+  LoaderCircle,
+  Pencil,
+  RotateCcw,
+  Sparkles,
+  Square,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { isAbortError, ProviderError } from "../providers/errors";
-import { streamAssistantReply } from "./chatService";
+import type { ProviderUsage } from "../providers/types";
+import { streamAssistantReplyEvents } from "./chatService";
+import {
+  appendMessage,
+  createConversationForWorkspace,
+  deleteConversation,
+  dropTrailingAssistantMessages,
+  getActiveConversationId,
+  listConversations,
+  listMessages,
+  readConversation,
+  renameConversation,
+  setActiveConversation,
+} from "./conversationStore";
+import type {
+  Conversation,
+  ConversationMessage,
+  ConversationMessageStatus,
+} from "./conversationTypes";
 
-type AssistantMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  status: "streaming" | "complete" | "failed" | "stopped";
-  contextUsed: boolean;
-  error?: string;
+type DisplayMessage = ConversationMessage & {
+  /** True while this reply is still being streamed and not yet persisted. */
+  streaming?: boolean;
 };
 
 type AssistantPanelProps = {
+  workspaceId: string;
   workspaceName: string;
+  documentId: string | null;
   documentTitle: string | null;
   documentContent: string;
   prompts: string[];
   isConnected: boolean;
+  providerId: string | null;
   modelId: string | null;
   onConfigure: () => void;
 };
 
 export function AssistantPanel({
+  workspaceId,
   workspaceName,
+  documentId,
   documentTitle,
   documentContent,
   prompts,
   isConnected,
+  providerId,
   modelId,
   onConfigure,
 }: AssistantPanelProps) {
+  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [value, setValue] = useState("");
-  const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [contextEnabled, setContextEnabled] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const canChat = isConnected && Boolean(modelId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const runningRef = useRef(false);
+  const conversationRef = useRef<Conversation | null>(null);
+
+  useEffect(() => {
+    conversationRef.current = conversation;
+  }, [conversation]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -52,75 +92,208 @@ export function AssistantPanel({
 
   useEffect(() => () => controllerRef.current?.abort(), []);
 
+  const refreshConversations = useCallback(async () => {
+    setConversations(await listConversations(workspaceId));
+  }, [workspaceId]);
+
+  // Restore the last active conversation for this workspace, falling back to the
+  // most recent one, so a reload lands where the user left off.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const list = await listConversations(workspaceId);
+      const activeId = await getActiveConversationId(workspaceId);
+      const restored = list.find((entry) => entry.id === activeId) ?? list[0] ?? null;
+      if (cancelled) return;
+      setConversations(list);
+      setConversation(restored);
+      if (restored) {
+        const restoredMessages = await listMessages(restored.id);
+        if (cancelled) return;
+        setMessages(restoredMessages);
+        await setActiveConversation(workspaceId, restored.id);
+      } else {
+        setMessages([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId]);
+
+  async function ensureConversation(): Promise<Conversation> {
+    const current = conversationRef.current;
+    if (current) return current;
+    const created = await createConversationForWorkspace({
+      workspaceId,
+      providerId: providerId ?? "gemini",
+      modelId: modelId ?? "",
+      ...(contextEnabled && documentId ? { documentId } : {}),
+    });
+    conversationRef.current = created;
+    setConversation(created);
+    void refreshConversations();
+    return created;
+  }
+
+  async function switchConversation(target: Conversation) {
+    controllerRef.current?.abort();
+    setHistoryOpen(false);
+    setConversation(target);
+    conversationRef.current = target;
+    setMessages(await listMessages(target.id));
+    await setActiveConversation(workspaceId, target.id);
+  }
+
+  async function startNewConversation() {
+    controllerRef.current?.abort();
+    setValue("");
+    setHistoryOpen(false);
+    // Defer creation until the first message so empty conversations never pile up.
+    setConversation(null);
+    conversationRef.current = null;
+    setMessages([]);
+    await setActiveConversation(workspaceId, null);
+  }
+
+  async function commitRename(target: Conversation) {
+    const title = renameDraft.trim();
+    setRenamingId(null);
+    if (!title) return;
+    const updated = await renameConversation(target, title);
+    setConversations(await listConversations(workspaceId));
+    if (conversationRef.current?.id === updated.id) {
+      setConversation(updated);
+      conversationRef.current = updated;
+    }
+  }
+
+  async function removeConversation(target: Conversation) {
+    if (!window.confirm(`Delete “${target.title}”? This cannot be undone.`)) return;
+    await deleteConversation(target);
+    const remaining = await listConversations(workspaceId);
+    setConversations(remaining);
+    if (conversationRef.current?.id === target.id) {
+      const next = remaining[0] ?? null;
+      setConversation(next);
+      conversationRef.current = next;
+      setMessages(next ? await listMessages(next.id) : []);
+      await setActiveConversation(workspaceId, next?.id ?? null);
+    }
+  }
+
   async function sendMessage(text: string, retry = false) {
     const prompt = text.trim();
     if (!prompt || runningRef.current || !isConnected || !modelId) return;
 
-    const contextUsed = contextEnabled && Boolean(documentTitle);
+    const target = await ensureConversation();
+    const contextUsed = contextEnabled && Boolean(documentTitle) && Boolean(documentContent);
+
+    // A retry replaces the trailing assistant reply instead of appending to it.
+    const history = retry
+      ? await dropTrailingAssistantMessages(target.id)
+      : await listMessages(target.id);
+
+    if (!retry) {
+      const userMessage = await appendMessage({
+        conversationId: target.id,
+        role: "user",
+        content: prompt,
+        status: "complete",
+      });
+      setMessages([...history, userMessage]);
+      setValue("");
+      history.push(userMessage);
+    } else {
+      setMessages(history);
+    }
+
     const assistantId = crypto.randomUUID();
-    const userEntry: AssistantMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: prompt,
-      status: "complete",
-      contextUsed,
-    };
-    const assistantEntry: AssistantMessage = {
+    const draft: DisplayMessage = {
       id: assistantId,
+      conversationId: target.id,
       role: "assistant",
       content: "",
-      status: "streaming",
-      contextUsed,
+      createdAt: new Date().toISOString(),
+      status: "complete",
+      sequence: Number.MAX_SAFE_INTEGER,
+      streaming: true,
     };
-    let conversation = messages;
-    if (retry) {
-      const lastAssistantIndex = messages.reduce(
-        (lastIndex, message, index) => message.role === "assistant" ? index : lastIndex,
-        -1,
-      );
-      conversation = messages.slice(0, lastAssistantIndex);
-    } else {
-      conversation = [...messages, userEntry];
-      setMessages((current) => [...current, userEntry]);
-      setValue("");
-    }
-    setMessages((current) => [...current, assistantEntry]);
+    setMessages((current) => [...current, draft]);
     runningRef.current = true;
     setIsGenerating(true);
+
     const controller = new AbortController();
     controllerRef.current = controller;
+    let buffered = "";
+    let usage: ProviderUsage | undefined;
+    let finalStatus: ConversationMessageStatus = "complete";
+    let failureMessage: string | undefined;
 
     try {
-      const requestMessages = conversation
+      const requestMessages = history
         .filter((message) => message.role === "user" || message.role === "assistant")
         .map(({ role, content }) => ({ role, content }));
 
-      for await (const chunk of streamAssistantReply({
+      for await (const event of streamAssistantReplyEvents({
         model: modelId,
         messages: requestMessages,
         ...(contextUsed && documentTitle ? { documentContext: { title: documentTitle, content: documentContent } } : {}),
         signal: controller.signal,
+        conversationId: target.id,
       })) {
-        setMessages((current) => current.map((message) =>
-          message.id === assistantId ? { ...message, content: message.content + chunk } : message,
-        ));
+        if (event.type === "text") {
+          // Buffered in render state only; storage is written once, at the end.
+          buffered += event.text;
+          const snapshot = buffered;
+          setMessages((current) => current.map((message) =>
+            message.id === assistantId ? { ...message, content: snapshot } : message,
+          ));
+        } else if (event.type === "done") {
+          usage = event.usage;
+        }
       }
-      setMessages((current) => current.map((message) =>
-        message.id === assistantId ? { ...message, status: controller.signal.aborted ? "stopped" : "complete" } : message,
-      ));
+      if (controller.signal.aborted) finalStatus = "interrupted";
     } catch (error) {
-      const wasStopped = controller.signal.aborted || isAbortError(error);
-      const safeError = error instanceof ProviderError ? error.message : "The response could not be completed. Try again.";
-      setMessages((current) => current.map((message) =>
-        message.id === assistantId
-          ? { ...message, status: wasStopped ? "stopped" : "failed", ...(!wasStopped && { error: safeError }) }
-          : message,
-      ));
+      if (controller.signal.aborted || isAbortError(error)) {
+        finalStatus = "interrupted";
+      } else {
+        finalStatus = "failed";
+        failureMessage = error instanceof ProviderError ? error.message : "The response could not be completed. Try again.";
+      }
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null;
       runningRef.current = false;
       setIsGenerating(false);
     }
+
+    // Persist exactly one terminal assistant message, including partial text.
+    try {
+      const stored = await appendMessage({
+        conversationId: target.id,
+        role: "assistant",
+        content: buffered,
+        status: finalStatus,
+        ...(usage ? { usage } : {}),
+        ...(failureMessage ? { error: failureMessage } : {}),
+      });
+      setMessages((current) => current.map((message) =>
+        message.id === assistantId ? { ...stored } : message,
+      ));
+    } catch {
+      setMessages((current) => current.map((message) =>
+        message.id === assistantId ? { ...message, streaming: false, status: finalStatus } : message,
+      ));
+    }
+    // Reflect a title adopted from the opening question, or a bumped updatedAt.
+    // Guarded so a slow refresh cannot resurrect a conversation the user has
+    // already replaced with a new one.
+    const refreshed = await readConversation(target.id);
+    if (refreshed && conversationRef.current?.id === refreshed.id) {
+      setConversation(refreshed);
+      conversationRef.current = refreshed;
+    }
+    await refreshConversations();
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -132,24 +305,83 @@ export function AssistantPanel({
     controllerRef.current?.abort();
   }
 
-  function startNewConversation() {
-    controllerRef.current?.abort();
-    setMessages([]);
-    setValue("");
-  }
+  const isEmpty = messages.length === 0;
+  const lastUserMessage = messages.filter((message) => message.role === "user").at(-1)?.content ?? "";
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-l border-border bg-sidebar text-sidebar-foreground" aria-label="AI Assistant">
       <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
         <div className="flex min-w-0 items-center gap-2 text-xs font-medium">
           <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
-          <span>Assistant</span>
+          <span className="truncate" title={conversation?.title}>{conversation?.title ?? "Assistant"}</span>
         </div>
         <div className="flex items-center gap-1">
           {isGenerating && <Button variant="ghost" size="icon" className="h-7 w-7" title="Stop generation" aria-label="Stop generation" onClick={stopGeneration}><Square /></Button>}
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="New conversation" aria-label="New conversation" onClick={startNewConversation}><FilePlus2 /></Button>
+          <Button
+            variant={historyOpen ? "secondary" : "ghost"}
+            size="icon"
+            className="h-7 w-7 text-muted-foreground"
+            title="Conversation history"
+            aria-label="Conversation history"
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen((open) => !open)}
+          ><History /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="New conversation" aria-label="New conversation" onClick={() => void startNewConversation()}><FilePlus2 /></Button>
         </div>
       </div>
+
+      {historyOpen && (
+        <div className="max-h-64 shrink-0 overflow-y-auto border-b border-border bg-popover p-1">
+          <div className="px-2 py-1 text-[10px] font-semibold uppercase text-muted-foreground">This workspace</div>
+          {conversations.length === 0 && <p className="px-2 py-2 text-[11px] text-muted-foreground">No saved conversations yet.</p>}
+          {conversations.map((entry) => (
+            <div key={entry.id} className={`group flex items-center gap-1 rounded-sm px-1 ${entry.id === conversation?.id ? "bg-secondary" : ""}`}>
+              {renamingId === entry.id ? (
+                <form
+                  className="flex min-w-0 flex-1 items-center gap-1 py-1"
+                  onSubmit={(event) => { event.preventDefault(); void commitRename(entry); }}
+                >
+                  <input
+                    autoFocus
+                    value={renameDraft}
+                    onChange={(event) => setRenameDraft(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === "Escape") setRenamingId(null); }}
+                    className="min-w-0 flex-1 rounded-sm border border-input bg-background px-1 py-0.5 text-[11px] outline-none"
+                    aria-label="Conversation title"
+                  />
+                  <Button type="submit" variant="ghost" size="sm" className="h-6 px-1 text-[10px]">Save</Button>
+                </form>
+              ) : (
+                <>
+                  <button
+                    className="min-w-0 flex-1 truncate px-1 py-1.5 text-left text-[11px]"
+                    onClick={() => void switchConversation(entry)}
+                    aria-current={entry.id === conversation?.id ? "true" : undefined}
+                  >
+                    {entry.title}
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    title="Rename conversation"
+                    aria-label={`Rename ${entry.title}`}
+                    onClick={() => { setRenamingId(entry.id); setRenameDraft(entry.title); }}
+                  ><Pencil /></Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    title="Delete conversation"
+                    aria-label={`Delete ${entry.title}`}
+                    onClick={() => void removeConversation(entry)}
+                  ><Trash2 /></Button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="flex shrink-0 flex-col gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center justify-between gap-2">
@@ -163,7 +395,7 @@ export function AssistantPanel({
           </div>
         </div>
         <div className="truncate border-t border-border pt-2 text-[9px] text-muted-foreground" title={modelId ?? undefined}>
-          {isConnected ? `Google Gemini · ${modelId ?? "no model selected"}` : "No provider connected"}
+          {isConnected ? `${providerId === "gemini" ? "Google Gemini" : providerId ?? "Provider"} · ${modelId ?? "no model selected"}` : "No provider connected"}
         </div>
       </div>
 
@@ -174,7 +406,7 @@ export function AssistantPanel({
           <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">{isConnected ? "Select an available model in Preferences before sending a message." : "Your API key stays in this browser session and is never saved with your documents."}</p>
           <Button className="mt-4" size="sm" onClick={onConfigure}>{isConnected ? "Choose model" : "Configure Gemini"}</Button>
         </div>
-      ) : messages.length === 0 ? (
+      ) : isEmpty ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-6 text-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-card"><Sparkles className="h-4 w-4 text-primary" /></div>
           <h2 className="mt-4 text-sm font-medium">What are you working on?</h2>
@@ -192,23 +424,23 @@ export function AssistantPanel({
             {messages.map((message) => (
               <article key={message.id} className={message.role === "user" ? "ml-3 border-l-2 border-primary/50 pl-3" : "mr-1"}>
                 <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-medium uppercase text-muted-foreground">
-                  <span>{message.role === "user" ? "You" : "Gemini"}</span>
-                  {message.contextUsed && <span className="normal-case">Document-grounded</span>}
+                  <span>{message.role === "user" ? "You" : providerId === "gemini" ? "Gemini" : "Assistant"}</span>
+                  {message.usage && <span className="normal-case">{message.usage.totalTokens ?? "?"} tokens</span>}
                 </div>
                 {message.content ? (
                   <div className="markdown-prose text-xs leading-5">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
                   </div>
-                ) : message.status === "streaming" ? (
+                ) : message.streaming ? (
                   <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground"><LoaderCircle className="h-3 w-3 animate-spin" /> Thinking…</div>
                 ) : null}
                 {message.status === "failed" && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-destructive">
                     <span>{message.error}</span>
-                    {message.role === "assistant" && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => void sendMessage(messages.filter((entry) => entry.role === "user").at(-1)?.content ?? "", true)}><RotateCcw /> Retry</Button>}
+                    {message.role === "assistant" && lastUserMessage && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => void sendMessage(lastUserMessage, true)}><RotateCcw /> Retry</Button>}
                   </div>
                 )}
-                {message.status === "stopped" && <div className="mt-1 text-[10px] text-muted-foreground">Generation stopped</div>}
+                {message.status === "interrupted" && <div className="mt-1 text-[10px] text-muted-foreground">Generation stopped</div>}
               </article>
             ))}
             <div ref={messagesEndRef} />

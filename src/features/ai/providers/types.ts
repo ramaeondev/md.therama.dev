@@ -52,6 +52,15 @@ export type ProviderTextResponse = {
   usage?: ProviderUsage;
 };
 
+/**
+ * Ordered events from a streaming request. A provider that reports token usage
+ * emits a `usage` event, normally last; providers without usage support emit
+ * only `text` events.
+ */
+export type ProviderStreamEvent =
+  | { type: "text"; text: string }
+  | { type: "usage"; usage: ProviderUsage };
+
 export type ProviderConnectionResult = {
   providerId: string;
   connected: true;
@@ -65,6 +74,12 @@ export interface AIProviderSession {
   listModels(signal?: AbortSignal): Promise<ProviderModel[]>;
   generateText(request: ProviderRequest): Promise<ProviderTextResponse>;
   streamText(request: ProviderRequest): AsyncIterable<string>;
+  /**
+   * Optional: a streaming variant that also surfaces provider-reported usage.
+   * When absent, callers fall back to `streamText` and record usage as
+   * unavailable rather than guessing.
+   */
+  streamTextEvents?(request: ProviderRequest): AsyncIterable<ProviderStreamEvent>;
 }
 
 export interface AIProvider {

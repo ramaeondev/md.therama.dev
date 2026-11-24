@@ -5,6 +5,7 @@ import type {
   ProviderConnectionResult,
   ProviderModel,
   ProviderRequest,
+  ProviderStreamEvent,
   ProviderTextResponse,
   ProviderUsage,
 } from "./types";
@@ -127,6 +128,17 @@ function createGeminiSession(apiKey: string): AIProviderSession {
   }
 
   async function* streamText(input: ProviderRequest): AsyncIterable<string> {
+    for await (const event of streamTextEvents(input)) {
+      if (event.type === "text") yield event.text;
+    }
+  }
+
+  /**
+   * Gemini emits cumulative `usageMetadata` on its final stream chunks. Usage is
+   * accumulated and emitted once at the end, only when the provider actually
+   * returned counts.
+   */
+  async function* streamTextEvents(input: ProviderRequest): AsyncIterable<ProviderStreamEvent> {
     const model = normalizeModelId(input.model);
     const params = new URLSearchParams({ alt: "sse" });
     let response: Response;
@@ -146,6 +158,7 @@ function createGeminiSession(apiKey: string): AIProviderSession {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let usage: ProviderUsage | undefined;
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -153,14 +166,17 @@ function createGeminiSession(apiKey: string): AIProviderSession {
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() ?? "";
         for (const line of lines) {
-          const text = parseSseLine(line);
-          if (text) yield text;
+          const parsed = parseSseLine(line);
+          if (!parsed) continue;
+          if (parsed.usage) usage = parsed.usage;
+          if (parsed.text) yield { type: "text", text: parsed.text };
         }
         if (done) break;
       }
       if (buffer) {
-        const text = parseSseLine(buffer);
-        if (text) yield text;
+        const parsed = parseSseLine(buffer);
+        if (parsed?.usage) usage = parsed.usage;
+        if (parsed?.text) yield { type: "text", text: parsed.text };
       }
     } catch (error) {
       if (isAbortError(error)) throw error;
@@ -169,9 +185,10 @@ function createGeminiSession(apiKey: string): AIProviderSession {
     } finally {
       reader.releaseLock();
     }
+    if (usage) yield { type: "usage", usage };
   }
 
-  return { providerId: PROVIDER_ID, testConnection, listModels, generateText, streamText };
+  return { providerId: PROVIDER_ID, testConnection, listModels, generateText, streamText, streamTextEvents };
 }
 
 function createRequestBody(input: ProviderRequest) {
@@ -212,7 +229,7 @@ function normalizeUsage(metadata?: GeminiResponsePayload["usageMetadata"]): Prov
   return { ...(inputTokens !== undefined && { inputTokens }), ...(outputTokens !== undefined && { outputTokens }), ...(totalTokens !== undefined && { totalTokens }), source: "provider_reported" };
 }
 
-function parseSseLine(line: string): string | undefined {
+function parseSseLine(line: string): { text?: string; usage?: ProviderUsage } | undefined {
   if (!line.startsWith("data:")) return undefined;
   const data = line.slice(5).trim();
   if (!data || data === "[DONE]") return undefined;
@@ -222,7 +239,10 @@ function parseSseLine(line: string): string | undefined {
   } catch {
     throw new ProviderError(PROVIDER_ID, "stream_interrupted", true);
   }
-  return extractText(payload) || undefined;
+  const text = extractText(payload) || undefined;
+  const usage = normalizeUsage(payload.usageMetadata);
+  if (!text && !usage) return undefined;
+  return { ...(text ? { text } : {}), ...(usage ? { usage } : {}) };
 }
 
 async function providerErrorFromResponse(response: Response): Promise<ProviderError> {
