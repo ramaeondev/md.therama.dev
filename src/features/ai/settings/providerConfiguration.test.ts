@@ -7,6 +7,7 @@ import { streamAssistantReplyEvents } from "../assistant/chatService";
 import { ProviderError } from "../providers/errors";
 import { providerRegistry } from "../providers";
 import { openAiCompatibleProviderId } from "../providers/openaiCompatible";
+import { PROXY_BASE_PATH } from "../providers/shared/proxyProtocol";
 import {
   connectProvider,
   disconnectAllProviders,
@@ -250,5 +251,36 @@ describe("Provider credentials surviving a reload", () => {
 
     simulateReload();
     expect(await restoreConnectedProviders(customId)).toEqual([]);
+  });
+
+  it("restores a relay-enabled provider and keeps sending through the relay", async () => {
+    const fetch = fetchMock();
+    vi.stubGlobal("fetch", fetch);
+    const customId = openAiCompatibleProviderId("Proxied gateway");
+    await saveCustomProvider({
+      id: customId,
+      displayName: "Proxied gateway",
+      baseUrl: "https://proxied.example.com/v1",
+      proxyBasePath: PROXY_BASE_PATH,
+    });
+    await connectProvider(customId, "compatible-secret");
+    await flushProviderCredentialWrites();
+
+    simulateReload();
+    const restored = await restoreConnectedProviders(customId);
+    expect(restored.map((entry) => entry.providerId)).toEqual([customId]);
+
+    // The reloaded session must still target the relay, not the provider.
+    fetch.mockClear();
+    await collect(
+      streamAssistantReplyEvents({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: "hi" }],
+        signal: new AbortController().signal,
+      }),
+    );
+    const urls = fetch.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.startsWith(PROXY_BASE_PATH))).toBe(true);
+    expect(urls.some((url) => url.includes("proxied.example.com"))).toBe(false);
   });
 });
