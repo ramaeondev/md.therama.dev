@@ -22,12 +22,7 @@ describe("local workspace foundation", () => {
   });
 
   it("creates Markdown documents in the requested workspace and folder", () => {
-    const document = createMarkdownDocument(
-      "workspace-a",
-      "folder-a",
-      "Design notes.md",
-      "2026-11-13T00:00:00.000Z",
-    );
+    const document = createMarkdownDocument("workspace-a", "folder-a", "Design notes.md", "2026-11-13T00:00:00.000Z");
     expect(document.title).toBe("Design notes.md");
     expect(document.workspaceId).toBe("workspace-a");
     expect(document.folderId).toBe("folder-a");
