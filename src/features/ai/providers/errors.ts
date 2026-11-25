@@ -12,10 +12,12 @@ export type ProviderErrorCode =
   | "unknown";
 
 const userMessages: Record<ProviderErrorCode, string> = {
-  invalid_api_key: "The API key was rejected. Check the key and its Gemini API access.",
-  quota_exceeded: "The provider quota is exhausted. Check the provider account's usage and billing limits.",
+  invalid_api_key: "The API key was rejected. Check the key and its API access.",
+  quota_exceeded:
+    "The provider quota is exhausted. Check the provider account's usage and billing limits.",
   rate_limited: "The provider is receiving too many requests. Wait a moment before trying again.",
-  network_error: "Could not reach the AI provider. Check your connection and try again.",
+  network_error:
+    "Could not reach the AI provider. Check your connection, and check that the endpoint allows browser (CORS) requests.",
   unsupported_model: "That model is unavailable or does not support text generation.",
   context_length_exceeded: "This request is longer than the selected model allows.",
   provider_unavailable: "The AI provider is temporarily unavailable. Try again later.",
@@ -47,7 +49,11 @@ export function normalizeProviderError(
   const codeText = `${providerCode ?? ""} ${providerMessage ?? ""}`.toLowerCase();
   let code: ProviderErrorCode = "unknown";
 
-  if (statusCode === 401 || statusCode === 403 || /api.?key|unauthenticated|permission_denied/.test(codeText)) {
+  if (
+    statusCode === 401 ||
+    statusCode === 403 ||
+    /api.?key|unauthenticated|permission_denied/.test(codeText)
+  ) {
     code = "invalid_api_key";
   } else if (/quota|resource_exhausted/.test(codeText)) {
     code = "quota_exceeded";
@@ -65,9 +71,16 @@ export function normalizeProviderError(
     code = "invalid_request";
   }
 
-  return new ProviderError(providerId, code, code === "rate_limited" || code === "provider_unavailable", statusCode);
+  return new ProviderError(
+    providerId,
+    code,
+    code === "rate_limited" || code === "provider_unavailable",
+    statusCode,
+  );
 }
 
 export function isAbortError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
+  return (
+    typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
+  );
 }

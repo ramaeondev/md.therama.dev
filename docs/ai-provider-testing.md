@@ -114,7 +114,8 @@ Automated tests never call a real provider: every request is served by a stubbed
 
 ## Manual verification with real keys
 
-Not part of CI. Use a dedicated, restricted key in a controlled environment:
+Not part of CI. Use a dedicated, restricted key in a controlled environment.
+Run these in the browser, not from Node: only the browser enforces CORS.
 
 1. Connect Gemini and generate a response.
 2. Connect OpenAI and generate a response.
@@ -124,12 +125,37 @@ Not part of CI. Use a dedicated, restricted key in a controlled environment:
 6. Try an invalid OpenAI key.
 7. Try a model the key cannot access.
 8. Interrupt the network during a stream.
-9. Add a compatible provider (for example 100milionseek) and stream a reply.
+9. Add a compatible provider and stream a reply.
 10. Reload the page: the provider definition survives, the key must be re-entered.
+
+Before step 9, confirm the endpoint sends `Access-Control-Allow-Origin` on the
+actual `POST` and on the streamed response, not just on `OPTIONS`:
+
+```bash
+curl -sS -o /dev/null -D - -X OPTIONS \
+  -H "Origin: https://md.therama.dev" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: authorization,content-type" \
+  "$BASE/v1/chat/completions" | grep -i access-control
+
+curl -sS -o /dev/null -D - \
+  -H "Origin: https://md.therama.dev" \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"model":"'"$MODEL"'","messages":[{"role":"user","content":"hi"}]}' \
+  "$BASE/v1/chat/completions" | grep -i access-control
+```
+
+The second command must also print `access-control-allow-origin`. If it does not,
+the provider cannot be used browser-direct regardless of any passing test.
 
 ## Known limitations
 
 - Automated tests use mocked `fetch`; real provider drift is caught only manually.
+- Automated tests cannot observe CORS: a stubbed `fetch` never enforces browser
+  origin rules, so an endpoint that answers `OPTIONS` but omits
+  `Access-Control-Allow-Origin` on real responses passes every test and still
+  fails in the browser as `network_error`. Clear the endpoint's CORS behaviour
+  manually before trusting a compatible provider.
 - Compatible providers are not guaranteed to implement every OpenAI option. The
   adapter assumes Chat Completions and SSE only, and retries once without
   `stream_options` if it is rejected.

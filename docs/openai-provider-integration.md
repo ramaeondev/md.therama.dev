@@ -160,6 +160,28 @@ Only the definition (name, ID, base URL, optional paths) is persisted, in the
 existing `app-meta` store. The key is not stored, so it is re-entered after a
 reload.
 
+### CORS is a hard requirement for browser-direct calls
+
+Requests are made directly from the browser, so the endpoint must return
+`Access-Control-Allow-Origin` on **every** response, including `POST` and the
+streamed response — not only on the `OPTIONS` preflight. A server that answers the
+preflight but omits the header on the actual response is still unusable: the
+browser discards the response and `fetch` rejects with `TypeError: Failed to fetch`,
+which the app reports as `network_error`.
+
+This is an endpoint-side condition the client cannot work around. In particular,
+`https://100milionseek.top` answers `OPTIONS` with `access-control-allow-origin: *`
+but sends no `Access-Control-Allow-Origin` on `GET /v1/models` or
+`POST /v1/chat/completions`, so it works from Node (as the live probe showed) yet
+is blocked from `https://md.therama.dev`. Adding a compatible provider pointed at
+it fails at connect time with `network_error`.
+
+Endpoints that are known to work browser-direct include OpenAI itself,
+OpenRouter, Groq, DeepSeek, and a local Ollama with `OLLAMA_ORIGINS` configured.
+If a provider cannot enable CORS, it needs a proxy or a server-side gateway
+instead of a direct adapter.
+
+
 ## Endpoint validation
 
 Compatible endpoints are validated before an adapter is created:
