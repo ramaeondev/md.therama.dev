@@ -7,8 +7,8 @@ import type { OpenAiCompatibleProviderConfig } from "../providers/openaiCompatib
  * Persists user-created OpenAI-compatible provider definitions.
  *
  * Only non-sensitive configuration is stored: display name, stable provider ID,
- * base URL, and optional endpoint paths. An API key is never written here — it
- * lives only in an in-memory session, so a reload requires re-entering it.
+ * base URL, and optional endpoint paths. The API key is not part of a
+ * definition; it has its own record in `providerCredentialStorage.ts`.
  *
  * The `app-meta` key/value store already exists, so no IndexedDB schema change is
  * needed for this.
@@ -21,6 +21,16 @@ export type CustomProviderDefinition = OpenAiCompatibleProviderConfig;
 export interface CustomProviderStorageAdapter {
   load(): Promise<CustomProviderDefinition[]>;
   save(definitions: CustomProviderDefinition[]): Promise<void>;
+  /**
+   * Adds or replaces one definition without clobbering the others.
+   *
+   * The read and the write happen in a single transaction so a concurrent tab, a
+   * failed earlier read, or an interrupted save can never drop a definition that
+   * is already on disk.
+   */
+  upsert(definition: CustomProviderDefinition): Promise<CustomProviderDefinition[]>;
+  /** Removes one definition, atomically, and returns what remains. */
+  remove(id: string): Promise<CustomProviderDefinition[]>;
 }
 
 function sanitize(value: unknown): CustomProviderDefinition | null {
@@ -52,16 +62,7 @@ export const indexedDbCustomProviderStorage: CustomProviderStorageAdapter = {
       transaction.objectStore(APP_META_STORE).get(storeKey),
     )) as { key: string; value?: unknown } | undefined;
     await transactionDone(transaction);
-    const list = Array.isArray(record?.value) ? record.value : [];
-    const definitions: CustomProviderDefinition[] = [];
-    const seen = new Set<string>();
-    for (const entry of list) {
-      const definition = sanitize(entry);
-      if (!definition || seen.has(definition.id)) continue;
-      seen.add(definition.id);
-      definitions.push(definition);
-    }
-    return definitions;
+    return readDefinitions(record?.value);
   },
   async save(definitions) {
     const database = await getAppDatabase();
@@ -69,4 +70,44 @@ export const indexedDbCustomProviderStorage: CustomProviderStorageAdapter = {
     transaction.objectStore(APP_META_STORE).put({ key: storeKey, value: definitions });
     await transactionDone(transaction);
   },
+  async upsert(definition) {
+    // Read and write share one transaction: IndexedDB serialises readwrite
+    // transactions on this store, so another tab cannot interleave a write
+    // between them and lose a definition.
+    const database = await getAppDatabase();
+    const transaction = database.transaction(APP_META_STORE, "readwrite");
+    const store = transaction.objectStore(APP_META_STORE);
+    const record = (await requestToPromise(store.get(storeKey))) as
+      { key: string; value?: unknown } | undefined;
+    const current = readDefinitions(record?.value);
+    const next = [...current.filter((entry) => entry.id !== definition.id), definition];
+    store.put({ key: storeKey, value: next });
+    await transactionDone(transaction);
+    return next;
+  },
+  async remove(id) {
+    const database = await getAppDatabase();
+    const transaction = database.transaction(APP_META_STORE, "readwrite");
+    const store = transaction.objectStore(APP_META_STORE);
+    const record = (await requestToPromise(store.get(storeKey))) as
+      { key: string; value?: unknown } | undefined;
+    const next = readDefinitions(record?.value).filter((entry) => entry.id !== id);
+    store.put({ key: storeKey, value: next });
+    await transactionDone(transaction);
+    return next;
+  },
 };
+
+/** Normalizes a stored value, dropping malformed and duplicate entries. */
+function readDefinitions(value: unknown): CustomProviderDefinition[] {
+  const list = Array.isArray(value) ? value : [];
+  const definitions: CustomProviderDefinition[] = [];
+  const seen = new Set<string>();
+  for (const entry of list) {
+    const definition = sanitize(entry);
+    if (!definition || seen.has(definition.id)) continue;
+    seen.add(definition.id);
+    definitions.push(definition);
+  }
+  return definitions;
+}

@@ -15,12 +15,12 @@ export interface PromptDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
-  description?: string;
-  label?: string;
-  placeholder?: string;
-  defaultValue?: string;
-  submitLabel?: string;
-  cancelLabel?: string;
+  description?: string | undefined;
+  label?: string | undefined;
+  placeholder?: string | undefined;
+  defaultValue?: string | undefined;
+  submitLabel?: string | undefined;
+  cancelLabel?: string | undefined;
   onSubmit: (value: string) => void;
 }
 

@@ -6,7 +6,9 @@ Browser-direct BYOK remains an accepted MVP trade-off, now covering two provider
 
 Gemini requests send the key in the `x-goog-api-key` header. OpenAI requests and
 OpenAI-compatible requests send it in `Authorization: Bearer`. No adapter places a
-key in a URL, a request body, localStorage, IndexedDB, logs, or analytics.
+key in a URL, a request body, localStorage, sessionStorage, logs, or analytics.
+A key *is* stored in this origin's IndexedDB so a refresh does not force the user
+to paste it again — see [Credential persistence](#credential-persistence).
 
 Requests are browser-direct by default, so no request reaches an application
 server. The one exception is a compatible provider added with the relay enabled,
@@ -15,18 +17,48 @@ below.
 
 | Requirement | Behaviour |
 | --- | --- |
-| Persistence | The raw key is never persisted. |
-| Browser storage | No localStorage, sessionStorage, or IndexedDB entry. |
+| Persistence | A key is stored in this device's browser storage (`app-meta`, key `ai-provider-credentials`) so a reload keeps the provider connected. It is never written into a workspace document, a workspace export, or a provider definition record. |
+| Erasure | Only an explicit **Clear key**, a **Remove provider**, or clearing all providers deletes the stored record. A failed **Test**, an offline reload, or a transient error never erases it. |
+| Browser storage | No localStorage or sessionStorage entry. IndexedDB is the only store, on this origin. |
 | React state | Keys live in an input field and are cleared after connecting. |
-| Sessions | Each provider keeps its key in a closure inside an in-memory session. |
+| Sessions | Each provider keeps its key in a closure inside a session. |
 | Logging | Credentials are never logged. |
 | Errors | Authorization headers and provider bodies are excluded from messages. |
-| Disconnect | Clears that provider's session and aborts its tracked requests. |
-| Switching | A session is keyed by provider ID, so one provider's key is never reused. |
+| Disconnect | Deletes that provider's stored record and aborts its tracked requests. |
+| Switching | A record and a session are keyed by provider ID, so one provider's key is never reused. |
 | Analytics | Credentials are never included. |
 
 Several providers can be connected at once, each with an independent session. A
-reconnect replaces only that provider's session; the others keep working.
+reconnect replaces only that provider's session and stored key; the others keep
+working.
+
+## Credential persistence
+
+`src/features/ai/settings/providerCredentialStorage.ts` keeps one record per
+connected provider in the existing `app-meta` key/value store:
+`{ providerId, apiKey, models, connectedAt }`. It is separate from workspace
+storage, so a credential never enters a workspace document, a workspace export,
+or a saved compatible-provider definition.
+
+The behaviour the app promises:
+
+- **A refresh keeps providers connected.** On load, `restoreConnectedProviders`
+  rebuilds an in-memory session per stored record and makes the provider recorded
+  in preferences active.
+- **Only the user disconnects.** A stored key is deleted by **Clear key**, by
+  **Remove provider**, or by a full disconnect — never by a failed **Test**, a
+  transient network error, an offline reload, or a provider outage.
+- **Reconnecting replaces, never duplicates.** One record per provider ID; a new
+  key overwrites the old record and the old session.
+- **Cached models are used on restore.** A reload does not need a network call to
+  list models. A revoked key surfaces as an error on the next request or **Test**,
+  not as a silent disconnection.
+
+What this does and does not protect against: the record is readable by anything
+running on this origin and by someone with access to this browser profile. It is
+not encryption against the device owner, and storage is per browser profile and
+per origin. Use a dedicated, restricted key and revoke it if the profile may be
+shared.
 
 ## The relay, and what it changes
 
@@ -42,8 +74,9 @@ the form.
 
 What stays true:
 
-- The key is still only typed by the user and never persisted. The relay forwards
-  the caller's `Authorization` header unchanged and holds no key of its own.
+- The key is still only typed by the user and forwarded from this browser. The
+  relay forwards the caller's `Authorization` header unchanged and holds no key
+  of its own.
 - The relay derives nothing from stored state; the target comes from the request.
 - Keys and upstream URLs never appear in relay error messages or logs.
 
@@ -82,14 +115,14 @@ inspected with developer tools or browser extensions; network access also depend
 on the user's browser and device. This is not equivalent to server-side secret
 storage and should not be used to protect a key from the person using the browser.
 
-Because credentials can be present in browser memory, the app must not let
-untrusted content execute scripts on its origin. Assistant output is rendered
-through `react-markdown` with `remark-gfm` and no raw HTML rehype plugin, so
-generated Markdown cannot inject script tags.
+Because credentials can be present in browser memory and in this origin's
+IndexedDB, the app must not let untrusted content execute scripts on its origin.
+Assistant output is rendered through `react-markdown` with `remark-gfm` and no raw
+HTML rehype plugin, so generated Markdown cannot inject script tags.
 
 Use dedicated keys restricted to the relevant API, monitor their usage, and revoke
 them if exposed. The settings screen discloses direct browser access and
-session-only credentials, and the relay is an explicit opt-in per provider rather
+device-stored credentials, and the relay is an explicit opt-in per provider rather
 than a silent fallback: the app must never quietly upload a BYOK key to an
 application backend. When the relay is enabled the key does reach this app's
 server, which must therefore be treated as trusted for that key.

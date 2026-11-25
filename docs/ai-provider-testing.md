@@ -127,8 +127,10 @@ Run these in the browser, not from Node: only the browser enforces CORS.
 7. Try a model the key cannot access.
 8. Interrupt the network during a stream.
 9. Add a compatible provider and stream a reply.
-10. Reload the page: the provider definition survives, the key must be re-entered.
-11. Add the same provider with the relay enabled and confirm it connects and
+10. Reload the page: the provider stays connected with its stored key, and its
+    saved model is still selected.
+11. Click **Clear key**, reload again: the provider stays disconnected.
+12. Add the same provider with the relay enabled and confirm it connects and
     streams where the direct attempt failed.
 
 ### Relay checks
