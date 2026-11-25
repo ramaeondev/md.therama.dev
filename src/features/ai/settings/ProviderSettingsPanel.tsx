@@ -40,6 +40,7 @@ export type ProviderSettingsPanelProps = {
     displayName: string;
     baseUrl: string;
     apiKey: string;
+    useRelay: boolean;
   }) => Promise<boolean>;
   onRemoveCustomProvider: (providerId: string) => Promise<void>;
 };
@@ -424,12 +425,18 @@ function ProviderCard({
 function AddCustomProviderForm({
   onAdd,
 }: {
-  onAdd: (input: { displayName: string; baseUrl: string; apiKey: string }) => Promise<boolean>;
+  onAdd: (input: {
+    displayName: string;
+    baseUrl: string;
+    apiKey: string;
+    useRelay: boolean;
+  }) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("https://");
   const [apiKey, setApiKey] = useState("");
+  const [useRelay, setUseRelay] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -445,11 +452,13 @@ function AddCustomProviderForm({
         displayName: name.trim(),
         baseUrl: baseUrl.trim(),
         apiKey: apiKey.trim(),
+        useRelay,
       });
       if (ok) {
         setName("");
         setBaseUrl("https://");
         setApiKey("");
+        setUseRelay(false);
         setOpen(false);
       }
     } finally {
@@ -510,6 +519,23 @@ function AddCustomProviderForm({
             Remote endpoints must use HTTPS, and private network addresses are rejected. Loopback
             HTTP is allowed for local runtimes.
           </p>
+          <label className="flex items-start gap-2 rounded border border-border px-2 py-2">
+            <input
+              type="checkbox"
+              checked={useRelay}
+              onChange={(event) => setUseRelay(event.target.checked)}
+              aria-label="Send requests through this app's relay"
+              className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary"
+            />
+            <span className="text-[10px] leading-4 text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Send requests through this app's relay.
+              </span>{" "}
+              Use this when the endpoint blocks browser requests (CORS). Your API key is still typed
+              here and never saved, but it is forwarded by this app's server on the way to the
+              endpoint instead of going straight from your browser.
+            </span>
+          </label>
           {error && (
             <p className="text-[11px] text-destructive" role="alert">
               {error}

@@ -6,8 +6,12 @@ Browser-direct BYOK remains an accepted MVP trade-off, now covering two provider
 
 Gemini requests send the key in the `x-goog-api-key` header. OpenAI requests and
 OpenAI-compatible requests send it in `Authorization: Bearer`. No adapter places a
-key in a URL, a request body, localStorage, IndexedDB, logs, or analytics, and no
-request is sent to an application server.
+key in a URL, a request body, localStorage, IndexedDB, logs, or analytics.
+
+Requests are browser-direct by default, so no request reaches an application
+server. The one exception is a compatible provider added with the relay enabled,
+which is an explicit, disclosed choice — see [The relay](#the-relay-and-what-it-changes)
+below.
 
 | Requirement | Behaviour |
 | --- | --- |
@@ -23,6 +27,44 @@ request is sent to an application server.
 
 Several providers can be connected at once, each with an independent session. A
 reconnect replaces only that provider's session; the others keep working.
+
+## The relay, and what it changes
+
+Some OpenAI-compatible services cannot be called from a browser at all: they send
+`Access-Control-Allow-Origin` on the preflight but not on the real response, so the
+browser discards a response the server actually produced. `100milionseek.top` is
+one of them.
+
+For those, a compatible provider can be added with **"Send requests through this
+app's relay"** enabled. Requests then go to this app's own origin and the server
+forwards them. This is opt-in per provider, chosen while adding it, and stated in
+the form.
+
+What stays true:
+
+- The key is still only typed by the user and never persisted. The relay forwards
+  the caller's `Authorization` header unchanged and holds no key of its own.
+- The relay derives nothing from stored state; the target comes from the request.
+- Keys and upstream URLs never appear in relay error messages or logs.
+
+What changes:
+
+| Aspect | Browser-direct | Through the relay |
+| --- | --- | --- |
+| Path of the key | browser → provider | browser → this app's server → provider |
+| Who can see the key | the browser's owner | the browser's owner **and** the server operator |
+| Ceremony | none | explicit checkbox when adding the provider |
+
+Because the key now transits the server, the relay must not log request headers or
+bodies. It must also not become an open proxy: it re-validates the target
+server-side, rejects loopback, private, link-local, and internal hosts, and allows
+only `GET` and `POST`. Anything stricter (per-account allow-lists, egress rules)
+belongs at the network layer; see the SSRF note below.
+
+If you do not want a key touching the server at all, leave the relay off and use a
+provider that sets CORS headers — OpenAI, OpenRouter, Groq, DeepSeek, Together, or
+Gemini all do.
+
 
 ## Compatible-provider endpoints
 
@@ -47,9 +89,10 @@ generated Markdown cannot inject script tags.
 
 Use dedicated keys restricted to the relevant API, monitor their usage, and revoke
 them if exposed. The settings screen discloses direct browser access and
-session-only credentials. The app must never silently upload a BYOK key to an
-application backend; a production deployment that needs a stronger boundary should
-add an explicit credential proxy instead.
+session-only credentials, and the relay is an explicit opt-in per provider rather
+than a silent fallback: the app must never quietly upload a BYOK key to an
+application backend. When the relay is enabled the key does reach this app's
+server, which must therefore be treated as trusted for that key.
 
 ## References
 

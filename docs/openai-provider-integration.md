@@ -156,30 +156,66 @@ The same adapter serves OpenRouter, Groq, DeepSeek, Together, Fireworks, Ollama,
 LM Studio, and vLLM. Compatibility is not assumed to be full OpenAI equivalence:
 capabilities are whatever the endpoint actually reports.
 
-Only the definition (name, ID, base URL, optional paths) is persisted, in the
-existing `app-meta` store. The key is not stored, so it is re-entered after a
-reload.
+Only the definition (name, ID, base URL, optional paths, and whether the relay is
+used) is persisted, in the existing `app-meta` store. The key is not stored, so it
+is re-entered after a reload.
 
-### CORS is a hard requirement for browser-direct calls
+### CORS: direct calls vs. the relay
 
-Requests are made directly from the browser, so the endpoint must return
-`Access-Control-Allow-Origin` on **every** response, including `POST` and the
-streamed response — not only on the `OPTIONS` preflight. A server that answers the
-preflight but omits the header on the actual response is still unusable: the
-browser discards the response and `fetch` rejects with `TypeError: Failed to fetch`,
-which the app reports as `network_error`.
+The browser requires `Access-Control-Allow-Origin` on **every** response,
+including `POST` and the streamed response — not only on the `OPTIONS` preflight.
+A server that answers the preflight but omits the header on the real response is
+still unusable: the browser discards the response and `fetch` rejects with
+`TypeError: Failed to fetch`, which the app reports as `network_error`.
 
-This is an endpoint-side condition the client cannot work around. In particular,
-`https://100milionseek.top` answers `OPTIONS` with `access-control-allow-origin: *`
-but sends no `Access-Control-Allow-Origin` on `GET /v1/models` or
-`POST /v1/chat/completions`, so it works from Node (as the live probe showed) yet
-is blocked from `https://md.therama.dev`. Adding a compatible provider pointed at
-it fails at connect time with `network_error`.
+`https://100milionseek.top` behaves exactly like that — `OPTIONS` returns
+`access-control-allow-origin: *`, but `GET /v1/models`, `POST /v1/chat/completions`,
+and even the keyless `/health` send no `Access-Control-Allow-Origin`. It works
+from Node and is blocked from the browser.
 
-Endpoints that are known to work browser-direct include OpenAI itself,
-OpenRouter, Groq, DeepSeek, and a local Ollama with `OLLAMA_ORIGINS` configured.
-If a provider cannot enable CORS, it needs a proxy or a server-side gateway
-instead of a direct adapter.
+Such a provider can still be used by ticking **"Send requests through this app's
+relay"** when adding it. The adapter then targets `/api/compat/*` on this app's own
+origin and sends the real endpoint in the `x-compat-upstream` header:
+
+```
+browser ──POST /api/compat/chat/completions──▶ this app's server ──▶ endpoint
+         Authorization: Bearer <key>            (forwards the same headers)
+         x-compat-upstream: https://…/v1
+```
+
+Endpoints that work browser-direct and need no relay: OpenAI, OpenRouter, Groq,
+DeepSeek, Together, and Gemini. A local Ollama works directly once
+`OLLAMA_ORIGINS` allows the app's origin.
+
+### The relay
+
+`src/features/ai/server/compatibleRelay.ts` forwards a request to
+`upstream + path` and returns the upstream response unchanged.
+
+- **The key is still the user's.** The caller's `Authorization` header is forwarded
+  as-is. The relay holds no provider key of its own and never injects one, so it is
+  a transport hop, not a credential store. It is still a change in trust: the key
+  passes through this app's server instead of going browser → provider directly,
+  which is why it is an explicit checkbox rather than an automatic fallback.
+- **The upstream is re-validated server-side.** A browser-side check is a
+  convenience; the relay can be called directly, so it validates the header itself
+  and rejects loopback, private, link-local, and internal hosts. Loopback is
+  allowed for direct browser calls (Ollama) but never through the relay, where it
+  would mean the deployment's own network.
+- **Streaming is passed through untouched.** The body is never read, buffered, or
+  re-encoded, so SSE arrives incrementally; `firstChunkMs` measured 1 ms against
+  the live endpoint. `content-encoding` is dropped so the edge does not compress
+  an already-encoded body twice.
+- **Request/response hygiene.** `host`, `origin`, `referer`, `cookie`,
+  `accept-encoding`, and the upstream header are stripped from the request;
+  `set-cookie`, `content-encoding`, `content-length`, and all `access-control-*`
+  headers are stripped from the response, which is marked `cache-control: no-store`.
+- **Only `GET` and `POST`** are forwarded; anything else gets `405`.
+- Upstream status and body are preserved, so the adapter's existing error mapping
+  (401 → `invalid_api_key`, `insufficient_quota` → `quota_exceeded`, …) works
+  unchanged. Relay-level failures use `400` for a rejected endpoint and `502` for
+  an unreachable one, and never include the URL or key in the message.
+
 
 
 ## Endpoint validation

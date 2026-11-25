@@ -288,6 +288,40 @@ describe("AI provider settings UI", () => {
         displayName: "100milionseek",
         baseUrl: "https://100milionseek.top/v1",
         apiKey: "compatible-key",
+        useRelay: false,
+      }),
+    );
+  });
+
+  it("adds a compatible provider through the relay when CORS blocks the endpoint", async () => {
+    const onAddCustomProvider = vi.fn().mockResolvedValue(true);
+    render(<ProviderSettingsPanel {...baseProps({ onAddCustomProvider })} />);
+
+    await act(async () => {
+      screen.getByRole("button", { name: /Add an OpenAI-compatible provider/ }).click();
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Compatible provider name"), {
+        target: { value: "100milionseek" },
+      });
+      fireEvent.change(screen.getByLabelText("Compatible provider base URL"), {
+        target: { value: "https://100milionseek.top/v1" },
+      });
+      fireEvent.change(screen.getByLabelText("Compatible provider API key"), {
+        target: { value: "compatible-key" },
+      });
+      fireEvent.click(screen.getByLabelText(/Send requests through this app's relay/));
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: /Add & connect/ }).click();
+    });
+
+    await waitFor(() =>
+      expect(onAddCustomProvider).toHaveBeenCalledWith({
+        displayName: "100milionseek",
+        baseUrl: "https://100milionseek.top/v1",
+        apiKey: "compatible-key",
+        useRelay: true,
       }),
     );
   });

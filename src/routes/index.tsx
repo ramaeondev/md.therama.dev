@@ -39,6 +39,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { AssistantPanel } from "@/features/ai/assistant/AssistantPanel";
 import { ProviderError } from "@/features/ai/providers/errors";
 import { openAiCompatibleProviderId } from "@/features/ai/providers/openaiCompatible";
+import { PROXY_BASE_PATH } from "@/features/ai/providers/shared/proxyProtocol";
 import { providerRegistry } from "@/features/ai/providers";
 import {
   connectProvider,
@@ -765,12 +766,22 @@ function WorkspacePage() {
   );
 
   const handleAddCustomProvider = useCallback(
-    async (input: { displayName: string; baseUrl: string; apiKey: string }): Promise<boolean> => {
+    async (input: {
+      displayName: string;
+      baseUrl: string;
+      apiKey: string;
+      useRelay: boolean;
+    }): Promise<boolean> => {
       const id = openAiCompatibleProviderId(input.displayName, [
         ...providerRegistry.list().map((provider) => provider.descriptor.id),
       ]);
       try {
-        await saveCustomProvider({ id, displayName: input.displayName, baseUrl: input.baseUrl });
+        await saveCustomProvider({
+          id,
+          displayName: input.displayName,
+          baseUrl: input.baseUrl,
+          ...(input.useRelay ? { proxyBasePath: PROXY_BASE_PATH } : {}),
+        });
       } catch (error) {
         toast.error(
           error instanceof ProviderError ? error.message : "That endpoint could not be used.",

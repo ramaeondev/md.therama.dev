@@ -1,5 +1,6 @@
 import { APP_META_STORE, getAppDatabase, requestToPromise, transactionDone } from "@/lib/indexedDb";
 
+import { PROXY_BASE_PATH } from "../providers/shared/proxyProtocol";
 import type { OpenAiCompatibleProviderConfig } from "../providers/openaiCompatible";
 
 /**
@@ -39,6 +40,7 @@ function sanitize(value: unknown): CustomProviderDefinition | null {
     ...(typeof record["modelsPath"] === "string" && record["modelsPath"]
       ? { modelsPath: record["modelsPath"] }
       : {}),
+    ...(record["proxyBasePath"] === PROXY_BASE_PATH ? { proxyBasePath: PROXY_BASE_PATH } : {}),
   };
 }
 

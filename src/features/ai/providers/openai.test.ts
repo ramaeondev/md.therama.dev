@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { normalizeProviderError, ProviderError } from "./errors";
 import { openaiProvider } from "./openai";
+import { createOpenAiCompatibleProvider } from "./openaiCompatible";
 import {
   classifyModelId,
   prettifyModelId,
@@ -613,5 +614,72 @@ describe("shared error normalization stays provider-agnostic", () => {
       "quota_exceeded",
     );
     expect(normalizeProviderError("gemini", 401).code).toBe("invalid_api_key");
+  });
+});
+
+describe("compatible provider relay mode", () => {
+  const relayConfig = {
+    id: "openai-compatible:proxied",
+    displayName: "Proxied",
+    baseUrl: "https://api.example.com/v1",
+    proxyBasePath: "/api/compat",
+  };
+
+  it("targets the same-origin relay and sends the upstream in a header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const session = createOpenAiCompatibleProvider(relayConfig).initialize({ apiKey: key });
+    await session.listModels();
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe("/api/compat/models");
+    const headers = new Headers(init?.headers);
+    expect(headers.get("x-compat-upstream")).toBe("https://api.example.com/v1");
+    expect(headers.get("authorization")).toBe(`Bearer ${key}`);
+  });
+
+  it("routes streaming through the relay too", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseResponse(['data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n', "data: [DONE]\n\n"]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const session = createOpenAiCompatibleProvider(relayConfig).initialize({ apiKey: key });
+    await collect(session.streamText({ ...request, model: "gpt-4.1-mini" }));
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/compat/chat/completions");
+  });
+
+  it("honours custom paths when relaying", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const session = createOpenAiCompatibleProvider({
+      ...relayConfig,
+      modelsPath: "/custom/models",
+      chatCompletionsPath: "/custom/chat",
+    }).initialize({ apiKey: key });
+    await session.listModels();
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/compat/custom/models");
+  });
+
+  it("calls the endpoint directly when no relay is configured", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const session = createOpenAiCompatibleProvider({
+      id: "openai-compatible:direct",
+      displayName: "Direct",
+      baseUrl: "https://api.example.com/v1",
+    }).initialize({ apiKey: key });
+    await session.listModels();
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe("https://api.example.com/v1/models");
+    expect(new Headers(init?.headers).get("x-compat-upstream")).toBeNull();
   });
 });

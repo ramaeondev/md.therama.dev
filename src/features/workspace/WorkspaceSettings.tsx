@@ -44,6 +44,7 @@ type WorkspaceSettingsProps = {
     displayName: string;
     baseUrl: string;
     apiKey: string;
+    useRelay: boolean;
   }) => Promise<boolean>;
   onRemoveCustomProvider: (providerId: string) => Promise<void>;
 };

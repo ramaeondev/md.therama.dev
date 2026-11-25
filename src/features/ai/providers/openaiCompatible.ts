@@ -26,6 +26,11 @@ export type OpenAiCompatibleProviderConfig = {
   baseUrl: string;
   chatCompletionsPath?: string;
   modelsPath?: string;
+  /**
+   * Same-origin relay path used when the endpoint cannot be called from the
+   * browser (no `Access-Control-Allow-Origin` on real responses).
+   */
+  proxyBasePath?: string;
 };
 
 const INSTANCE_ID_PREFIX = "openai-compatible:";
@@ -86,6 +91,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleProviderC
     apiKey: "",
     ...(config.chatCompletionsPath ? { chatCompletionsPath: config.chatCompletionsPath } : {}),
     ...(config.modelsPath ? { modelsPath: config.modelsPath } : {}),
+    ...(config.proxyBasePath ? { proxyBasePath: config.proxyBasePath } : {}),
   };
 
   return {

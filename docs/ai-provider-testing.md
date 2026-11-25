@@ -16,8 +16,9 @@ Automated tests never call a real provider: every request is served by a stubbed
 | File | Covers |
 | --- | --- |
 | `providers/providers.test.ts` | Provider foundation and the full Gemini adapter (unchanged) |
-| `providers/openai.test.ts` | OpenAI adapter, SSE parser, model catalogue, endpoint validation |
+| `providers/openai.test.ts` | OpenAI adapter, SSE parser, model catalogue, endpoint validation, relay targeting |
 | `providers/registry.test.ts` | Registry resolution, credential isolation, provider switching, compatible providers |
+| `server/compatibleRelay.test.ts` | Relay forwarding, SSRF rejection, header hygiene, SSE pass-through |
 | `settings/ProviderSettingsPanel.test.tsx` | Provider settings UI for all three categories |
 | `assistant/chatService.test.ts` | Gemini streaming, usage lifecycle, cancellation (unchanged) |
 | `assistant/AssistantPanel.test.tsx` | Conversation UI, per-message provider attribution, switching between turns |
@@ -127,6 +128,56 @@ Run these in the browser, not from Node: only the browser enforces CORS.
 8. Interrupt the network during a stream.
 9. Add a compatible provider and stream a reply.
 10. Reload the page: the provider definition survives, the key must be re-entered.
+11. Add the same provider with the relay enabled and confirm it connects and
+    streams where the direct attempt failed.
+
+### Relay checks
+
+These run against a real server, not a mocked `fetch`:
+
+```bash
+KEY=...                       # the user's own key, never committed
+BASE=http://localhost:8081    # the dev server
+
+# Models through the relay
+curl -sS -H "authorization: Bearer $KEY" \
+  -H "x-compat-upstream: https://100milionseek.top/v1" \
+  "$BASE/api/compat/models"
+
+# Streaming must arrive incrementally, not in one buffered burst
+curl -sS -N -H "authorization: Bearer $KEY" -H "content-type: application/json" \
+  -H "x-compat-upstream: https://100milionseek.top/v1" \
+  -d '{"model":"deepseek-v4.1-flash-free","messages":[{"role":"user","content":"Count 1 to 20"}],"stream":true,"stream_options":{"include_usage":true}}' \
+  "$BASE/api/compat/chat/completions"
+```
+
+Each of these must be rejected with `400` and no upstream call:
+
+```bash
+-H "x-compat-upstream: http://localhost:11434/v1"     # loopback
+-H "x-compat-upstream: https://192.168.1.10/v1"       # private
+-H "x-compat-upstream: https://169.254.169.254/"      # link-local / metadata
+-H "x-compat-upstream: http://api.example.com/v1"     # plain http
+-H "x-compat-upstream: https://u:p@api.example.com/v1" # embedded credentials
+```
+
+`DELETE` on the relay path must return `405`.
+
+To check the built Worker (since `vite preview` serves the wrong directory):
+
+```bash
+node -e '
+const m = await import("./.output/server/index.mjs");
+const w = m.default ?? m;
+const res = await w.fetch(new Request("http://x/api/compat/models", {
+  headers: {
+    authorization: `Bearer ${process.env.KEY}`,
+    "x-compat-upstream": "https://100milionseek.top/v1",
+  },
+}), {}, { waitUntil() {}, passThroughOnException() {} });
+console.log(res.status, (await res.text()).slice(0, 120));
+'
+```
 
 Before step 9, confirm the endpoint sends `Access-Control-Allow-Origin` on the
 actual `POST` and on the streamed response, not just on `OPTIONS`:
@@ -154,12 +205,17 @@ the provider cannot be used browser-direct regardless of any passing test.
 - Automated tests cannot observe CORS: a stubbed `fetch` never enforces browser
   origin rules, so an endpoint that answers `OPTIONS` but omits
   `Access-Control-Allow-Origin` on real responses passes every test and still
-  fails in the browser as `network_error`. Clear the endpoint's CORS behaviour
-  manually before trusting a compatible provider.
+  fails in the browser as `network_error`. This is what the relay exists for, and
+  it means the relay itself must be exercised over a real server: the unit tests
+  cover the handler, but the built Worker has to be verified separately.
+- `vite preview` cannot serve this app's built output (it looks for `dist/server/`
+  while the build writes `.output/`), so verify the production Worker by importing
+  `.output/server/index.mjs` and calling `fetch` on it, or by deploying.
 - Compatible providers are not guaranteed to implement every OpenAI option. The
   adapter assumes Chat Completions and SSE only, and retries once without
   `stream_options` if it is rejected.
 - Token usage is reported only when the provider sends it; an interrupted stream
   leaves it unavailable by design.
-- SSRF protection is host-based and cannot resolve DNS rebinding; a production
-  deployment should enforce this server-side.
+- SSRF protection in the relay is host-based and cannot resolve DNS rebinding; a
+  production deployment should also restrict egress at the network layer.
+

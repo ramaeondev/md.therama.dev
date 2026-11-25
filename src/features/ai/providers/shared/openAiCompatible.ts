@@ -29,9 +29,19 @@ export type OpenAiCompatibleConfig = {
   chatCompletionsPath?: string;
   /** Path appended to the base URL. Defaults to `/models`. */
   modelsPath?: string;
+  /**
+   * Routes requests through this app's same-origin relay instead of calling the
+   * endpoint directly. Needed for services that omit `Access-Control-Allow-Origin`
+   * on real responses, which a browser will not accept. When set, `baseUrl` is
+   * sent in a header rather than being used as the request origin.
+   */
+  proxyBasePath?: string;
 };
 
 export const OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1";
+
+/** Header carrying the real upstream when the relay is in use. */
+export const PROXY_UPSTREAM_HEADER = "x-compat-upstream";
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
@@ -56,10 +66,18 @@ type ChatCompletionErrorPayload = {
 export function createOpenAiCompatibleSession(config: OpenAiCompatibleConfig): AIProviderSession {
   const providerId = config.providerId;
   const baseUrl = normalizeBaseUrl(config.baseUrl);
-  const chatUrl = joinUrl(baseUrl, config.chatCompletionsPath ?? "/chat/completions");
-  const modelsUrl = joinUrl(baseUrl, config.modelsPath ?? "/models");
   const apiKey = config.apiKey.trim();
   if (!apiKey) throw new ProviderError(providerId, "invalid_api_key", false);
+
+  // Directly: {base}/models. Through the relay: {proxy}/models with the upstream
+  // in a header, so the browser only ever talks to its own origin.
+  const relay = config.proxyBasePath?.replace(/\/+$/, "");
+  const chatUrl = relay
+    ? `${relay}${config.chatCompletionsPath ?? "/chat/completions"}`
+    : joinUrl(baseUrl, config.chatCompletionsPath ?? "/chat/completions");
+  const modelsUrl = relay
+    ? `${relay}${config.modelsPath ?? "/models"}`
+    : joinUrl(baseUrl, config.modelsPath ?? "/models");
 
   async function request(url: string, init: RequestInit = {}): Promise<Response> {
     try {
@@ -68,6 +86,8 @@ export function createOpenAiCompatibleSession(config: OpenAiCompatibleConfig): A
       headers.set("accept", init.body ? "text/event-stream, application/json" : "application/json");
       if (init.body && !headers.has("content-type"))
         headers.set("content-type", "application/json");
+      // The relay forwards this to the real endpoint; it is never a query string.
+      if (relay) headers.set(PROXY_UPSTREAM_HEADER, baseUrl);
       const response = await fetch(url, { ...init, headers });
       if (!response.ok) throw await providerErrorFromResponse(providerId, response);
       return response;
