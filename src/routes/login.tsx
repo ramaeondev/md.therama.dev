@@ -1,0 +1,8 @@
+import { createFileRoute } from "@tanstack/react-router";
+
+import { AuthPage } from "@/features/auth/AuthPage";
+
+export const Route = createFileRoute("/login")({
+  head: () => ({ meta: [{ title: "Sign in — Markdown Workspace" }] }),
+  component: () => <AuthPage mode="login" />,
+});

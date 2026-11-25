@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { CustomProviderDefinition } from "@/features/ai/settings/customProviderStorage";
 import {
   ProviderSettingsPanel,
@@ -18,6 +19,7 @@ import {
 } from "@/features/ai/settings/ProviderSettingsPanel";
 import { UsageDashboard } from "@/features/ai/usage/UsageDashboard";
 import { WorkspaceIntelligencePanel } from "@/features/ai/rag/WorkspaceIntelligencePanel";
+import { Link } from "@tanstack/react-router";
 import type { MarkdownDocument } from "./types";
 import type { WorkspacePreferences } from "./types";
 
@@ -51,6 +53,17 @@ type WorkspaceSettingsProps = {
     useRelay: boolean;
   }) => Promise<boolean>;
   onRemoveCustomProvider: (providerId: string) => Promise<void>;
+  accountEmail: string | null;
+  syncEnabled: boolean;
+  syncStatus: string;
+  recoveryKey: string | null;
+  recoveryKeyAcknowledged: boolean;
+  recoveryKeyInput: string;
+  onSyncEnabledChange: (enabled: boolean) => void;
+  onRecoveryKeyAcknowledged: () => void;
+  onRecoveryKeyInputChange: (value: string) => void;
+  onUnlockSync: () => void;
+  onSignOut: () => void;
 };
 
 export function WorkspaceSettings({
@@ -74,6 +87,17 @@ export function WorkspaceSettings({
   onSelectModel,
   onAddCustomProvider,
   onRemoveCustomProvider,
+  accountEmail,
+  syncEnabled,
+  syncStatus,
+  recoveryKey,
+  recoveryKeyAcknowledged,
+  recoveryKeyInput,
+  onSyncEnabledChange,
+  onRecoveryKeyAcknowledged,
+  onRecoveryKeyInputChange,
+  onUnlockSync,
+  onSignOut,
 }: WorkspaceSettingsProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
 
@@ -212,7 +236,93 @@ export function WorkspaceSettings({
                     </p>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">No account or cloud sync is active.</p>
+                {accountEmail ? (
+                  <div className="space-y-4 rounded-lg border border-border p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">Cloud sync</p>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          Signed in as {accountEmail}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={syncEnabled}
+                        onCheckedChange={onSyncEnabledChange}
+                        aria-label="Enable encrypted cloud sync"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">{syncStatus}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Only encrypted Markdown files sync. Turning sync off pauses future transfers
+                      and keeps existing copies on this device and in your account.
+                    </p>
+                    {recoveryKey && !recoveryKeyAcknowledged && (
+                      <div className="space-y-3 rounded-md bg-muted p-3">
+                        <p className="text-sm font-medium">Save your recovery key</p>
+                        <p className="text-xs text-muted-foreground">
+                          This key unlocks your encrypted documents on another device. It is shown
+                          only here and is not stored on the server.
+                        </p>
+                        <code className="block break-all rounded bg-background p-2 text-xs">
+                          {recoveryKey}
+                        </code>
+                        <Button size="sm" onClick={onRecoveryKeyAcknowledged}>
+                          I saved this recovery key
+                        </Button>
+                      </div>
+                    )}
+                    {!recoveryKey &&
+                      syncEnabled &&
+                      syncStatus.toLowerCase().includes("recovery key") && (
+                        <div className="space-y-2">
+                          <label className="text-xs" htmlFor="sync-recovery-key">
+                            Enter recovery key from another device
+                          </label>
+                          <Input
+                            id="sync-recovery-key"
+                            value={recoveryKeyInput}
+                            onChange={(event) => onRecoveryKeyInputChange(event.target.value)}
+                            autoComplete="off"
+                          />
+                          <Button size="sm" onClick={onUnlockSync}>
+                            Unlock encrypted sync
+                          </Button>
+                        </div>
+                      )}
+                    <Button variant="outline" size="sm" onClick={onSignOut}>
+                      Sign out
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4 rounded-lg border border-border p-4">
+                    <div>
+                      <p className="text-sm font-medium">Sign in to enable cloud sync</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Sync stays off while you use the app without an account.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="text-xs text-muted-foreground">Cloud sync</p>
+                      <TooltipProvider delayDuration={0}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span tabIndex={0} className="inline-flex">
+                              <Switch
+                                checked={false}
+                                disabled
+                                aria-label="Cloud sync disabled; sign in to enable"
+                              />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Sign in to enable encrypted cloud sync.</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <Button asChild size="sm">
+                      <Link to="/login">Sign in</Link>
+                    </Button>
+                  </div>
+                )}
               </section>
             )}
             {activeSection === "ai" && (

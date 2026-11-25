@@ -148,9 +148,14 @@ export function disconnectGemini(): void {
 
 /** Disconnects every provider and erases every stored key. */
 export function disconnectAllProviders(): void {
+  void clearAllProviderCredentials();
+}
+
+/** Clears every provider session and awaits removal of all saved BYOK keys. */
+export async function clearAllProviderCredentials(): Promise<void> {
   for (const request of activeRequests) request.abort();
   resetProviderSessionsForTests();
-  void indexedDbProviderCredentialStorage.clear().catch(() => undefined);
+  await indexedDbProviderCredentialStorage.clear();
 }
 
 /** Test-only: drop every in-memory session, keeping stored credentials. */

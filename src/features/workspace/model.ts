@@ -62,7 +62,14 @@ def add(a, b) {\n  return a + b;\n}\n\n## What comes next\n\nYour workspace is r
     openDocumentIds: ["doc-welcome"],
     activeDocumentId: "doc-welcome",
     recentDocumentIds: ["doc-welcome"],
-    preferences: { theme: "dark", fontSize: 14, wordWrap: true, autoSaveDelay: 700, aiProviderId: null, aiModelId: null },
+    preferences: {
+      theme: "dark",
+      fontSize: 14,
+      wordWrap: true,
+      autoSaveDelay: 700,
+      aiProviderId: null,
+      aiModelId: null,
+    },
   };
 }
 
@@ -107,7 +114,10 @@ export function duplicateMarkdownDocument(
   };
 }
 
-export function renameMarkdownDocument(document: MarkdownDocument, title: string): MarkdownDocument {
+export function renameMarkdownDocument(
+  document: MarkdownDocument,
+  title: string,
+): MarkdownDocument {
   const cleanTitle = title.trim().replace(/\.(md|markdown|txt)$/i, "") || "Untitled";
   return { ...document, title: `${cleanTitle}.md`, updatedAt: new Date().toISOString() };
 }
