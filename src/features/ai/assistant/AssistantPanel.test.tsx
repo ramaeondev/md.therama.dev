@@ -8,9 +8,13 @@ import { AssistantPanel } from "./AssistantPanel";
 import { listConversations, listMessages, openConversation } from "./conversationStore";
 
 const streamMock = vi.fn();
+const ragMocks = vi.hoisted(() => ({ retrieve: vi.fn() }));
 
 vi.mock("./chatService", () => ({
   streamAssistantReplyEvents: (...args: unknown[]) => streamMock(...args),
+}));
+vi.mock("../rag/ragService", () => ({
+  retrieveWorkspaceContext: (...args: unknown[]) => ragMocks.retrieve(...args),
 }));
 
 const baseProps = {
@@ -24,6 +28,7 @@ const baseProps = {
   providerId: "gemini",
   modelId: "gemini-test",
   onConfigure: () => {},
+  onOpenSource: vi.fn(),
 };
 
 function emitText(
@@ -222,6 +227,53 @@ describe("Assistant conversation UI", () => {
         "chunk after chunk",
       );
     });
+  });
+
+  it("retrieves workspace context and persists navigable source references", async () => {
+    const source = {
+      chunkId: "chunk-auth",
+      documentId: "doc-security",
+      documentTitle: "Security.md",
+      headingPath: ["Authentication", "Sessions"],
+      score: 0.84,
+      excerpt: "Sessions use rotating refresh tokens.",
+    };
+    ragMocks.retrieve.mockResolvedValue({
+      text: "Untrusted retrieved excerpts",
+      sources: [source],
+    });
+    streamMock.mockImplementation(async function* (input: { workspaceContext?: string }) {
+      expect(input.workspaceContext).toContain("Untrusted retrieved excerpts");
+      yield { type: "text" as const, text: "Sessions use rotating refresh tokens." };
+      yield { type: "done" as const, providerId: "gemini", modelId: "gemini-test" };
+    });
+    setup();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Answer using"), { target: { value: "workspace" } });
+    });
+    await typeAndSend("How do sessions work?");
+
+    const sourceButton = await screen.findByRole("button", {
+      name: "Security.md → Authentication → Sessions",
+    });
+    expect(sourceButton).toBeInTheDocument();
+    await act(async () => {
+      sourceButton.click();
+    });
+    expect(baseProps.onOpenSource).toHaveBeenCalledWith("doc-security", [
+      "Authentication",
+      "Sessions",
+    ]);
+    await waitFor(async () => {
+      const conversation = await onlyConversation(baseProps.workspaceId);
+      const messages = await listMessages(conversation.id);
+      expect(messages.find((message) => message.role === "assistant")?.sources).toEqual([source]);
+    });
+    expect(ragMocks.retrieve).toHaveBeenCalledWith(
+      baseProps.workspaceId,
+      "How do sessions work?",
+      expect.any(Object),
+    );
   });
 
   it("creates a second conversation and can switch back to the first", async () => {

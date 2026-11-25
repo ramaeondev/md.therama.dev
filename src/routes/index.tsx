@@ -39,6 +39,7 @@ import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { AssistantPanel } from "@/features/ai/assistant/AssistantPanel";
+import { syncWorkspaceDocuments } from "@/features/ai/rag/indexQueue";
 import { ProviderError } from "@/features/ai/providers/errors";
 import { openAiCompatibleProviderId } from "@/features/ai/providers/openaiCompatible";
 import { PROXY_BASE_PATH } from "@/features/ai/providers/shared/proxyProtocol";
@@ -141,6 +142,10 @@ function WorkspacePage() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>("general");
   const [createdWorkspaceId, setCreatedWorkspaceId] = useState<string | null>(null);
   const [workspaceModal, setWorkspaceModal] = useState<WorkspaceModal | null>(null);
+  const [pendingSourceJump, setPendingSourceJump] = useState<{
+    documentId: string;
+    headingPath: string[];
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -148,8 +153,9 @@ function WorkspacePage() {
   const activeWorkspace =
     state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ??
     state.workspaces[0];
-  const documents = state.documents.filter(
-    (document) => document.workspaceId === state.activeWorkspaceId,
+  const documents = useMemo(
+    () => state.documents.filter((document) => document.workspaceId === state.activeWorkspaceId),
+    [state.documents, state.activeWorkspaceId],
   );
   const folders = state.folders.filter((folder) => folder.workspaceId === state.activeWorkspaceId);
   const activeDocument =
@@ -163,6 +169,13 @@ function WorkspacePage() {
   );
   const wordCount = (activeDocument?.content.trim().match(/\S+/g) ?? []).length;
   const charCount = activeDocument?.content.length ?? 0;
+
+  useEffect(() => {
+    if (!pendingSourceJump || activeDocument?.id !== pendingSourceJump.documentId) return;
+    const heading = pendingSourceJump.headingPath.at(-1);
+    if (heading) editorRef.current?.jumpToHeading(heading, pendingSourceJump.headingPath);
+    setPendingSourceJump(null);
+  }, [activeDocument?.id, pendingSourceJump]);
 
   useEffect(() => {
     let cancelled = false;
@@ -283,6 +296,20 @@ function WorkspacePage() {
     return () => window.clearTimeout(timer);
   }, [hydrated, state]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    void syncWorkspaceDocuments(
+      state.activeWorkspaceId,
+      documents.map((document) => ({
+        workspaceId: document.workspaceId,
+        documentId: document.id,
+        documentTitle: document.title,
+        folderId: document.folderId,
+        content: document.content,
+      })),
+    );
+  }, [hydrated, state.activeWorkspaceId, documents]);
+
   const updateState = useCallback((updater: (current: WorkspaceState) => WorkspaceState) => {
     setState((current) => updater(current));
   }, []);
@@ -302,6 +329,14 @@ function WorkspacePage() {
       }));
     },
     [updateState],
+  );
+
+  const openSource = useCallback(
+    (documentId: string, headingPath: string[]) => {
+      setPendingSourceJump(headingPath.length ? { documentId, headingPath } : null);
+      openDocument(documentId);
+    },
+    [openDocument],
   );
 
   const updateDocumentContent = useCallback(
@@ -1317,6 +1352,7 @@ function WorkspacePage() {
                 }
                 modelId={state.preferences.aiModelId}
                 onConfigure={openAISettings}
+                onOpenSource={openSource}
               />
             </ResizablePanel>
           )}
@@ -1356,6 +1392,8 @@ function WorkspacePage() {
         preferences={state.preferences}
         onChange={setPreferences}
         initialSection={settingsInitialSection}
+        workspaceId={state.activeWorkspaceId}
+        documents={documents}
         connectedProviders={connectedProviders}
         activeProviderId={activeProviderId}
         customProviders={customProviders}

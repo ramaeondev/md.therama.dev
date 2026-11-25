@@ -17,9 +17,11 @@ import {
   type ConnectedProviderSummary,
 } from "@/features/ai/settings/ProviderSettingsPanel";
 import { UsageDashboard } from "@/features/ai/usage/UsageDashboard";
+import { WorkspaceIntelligencePanel } from "@/features/ai/rag/WorkspaceIntelligencePanel";
+import type { MarkdownDocument } from "./types";
 import type { WorkspacePreferences } from "./types";
 
-export type SettingsSection = "general" | "editor" | "storage" | "ai" | "usage";
+export type SettingsSection = "general" | "editor" | "storage" | "ai" | "usage" | "intelligence";
 export type ProviderConnectionStatus =
   "not-configured" | "connecting" | "testing" | "connected" | "failed";
 
@@ -29,6 +31,8 @@ type WorkspaceSettingsProps = {
   preferences: WorkspacePreferences;
   onChange: (preferences: WorkspacePreferences) => void;
   initialSection: SettingsSection;
+  workspaceId: string;
+  documents: MarkdownDocument[];
   connectedProviders: ConnectedProviderSummary[];
   activeProviderId: string | null;
   customProviders: CustomProviderDefinition[];
@@ -55,6 +59,8 @@ export function WorkspaceSettings({
   preferences,
   onChange,
   initialSection,
+  workspaceId,
+  documents,
   connectedProviders,
   activeProviderId,
   customProviders,
@@ -93,16 +99,24 @@ export function WorkspaceSettings({
         </DialogHeader>
         <div className="grid min-h-[330px] grid-cols-[170px_1fr] overflow-hidden">
           <nav className="border-r border-border p-3" aria-label="Settings sections">
-            {(["general", "editor", "storage", "ai", "usage"] as const).map((section) => (
-              <Button
-                key={section}
-                variant={activeSection === section ? "secondary" : "ghost"}
-                className="mb-1 h-9 w-full justify-start text-xs capitalize"
-                onClick={() => setActiveSection(section)}
-              >
-                {section === "ai" ? "AI providers" : section === "usage" ? "AI usage" : section}
-              </Button>
-            ))}
+            {(["general", "editor", "storage", "ai", "intelligence", "usage"] as const).map(
+              (section) => (
+                <Button
+                  key={section}
+                  variant={activeSection === section ? "secondary" : "ghost"}
+                  className="mb-1 h-9 w-full justify-start text-xs capitalize"
+                  onClick={() => setActiveSection(section)}
+                >
+                  {section === "ai"
+                    ? "AI providers"
+                    : section === "usage"
+                      ? "AI usage"
+                      : section === "intelligence"
+                        ? "Workspace AI"
+                        : section}
+                </Button>
+              ),
+            )}
           </nav>
           <div className="min-w-0 space-y-6 overflow-y-auto p-6">
             {activeSection === "general" && (
@@ -231,6 +245,9 @@ export function WorkspaceSettings({
               />
             )}
             {activeSection === "usage" && <UsageDashboard />}
+            {activeSection === "intelligence" && (
+              <WorkspaceIntelligencePanel workspaceId={workspaceId} documents={documents} />
+            )}
           </div>
         </div>
       </DialogContent>

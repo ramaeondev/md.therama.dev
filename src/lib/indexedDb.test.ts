@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   APP_DATABASE_NAME,
   APP_META_STORE,
+  RAG_CHUNK_STORE,
+  RAG_INDEX_META_STORE,
   APP_DATABASE_VERSION,
   CONVERSATION_STORE,
   deleteAppDatabase,
@@ -47,21 +49,34 @@ function readState(database: IDBDatabase): Promise<unknown> {
 }
 
 const legacyState = {
-  workspaces: [{ id: "workspace-legacy", name: "Existing workspace", createdAt: "2026-11-01T00:00:00.000Z" }],
-  folders: [{ id: "folder-legacy", workspaceId: "workspace-legacy", parentId: null, name: "Notes" }],
-  documents: [{
-    id: "doc-legacy",
-    workspaceId: "workspace-legacy",
-    folderId: "folder-legacy",
-    title: "Kept.md",
-    content: "# Kept\n\nDo not lose this.",
-    updatedAt: "2026-11-02T00:00:00.000Z",
-  }],
+  workspaces: [
+    { id: "workspace-legacy", name: "Existing workspace", createdAt: "2026-11-01T00:00:00.000Z" },
+  ],
+  folders: [
+    { id: "folder-legacy", workspaceId: "workspace-legacy", parentId: null, name: "Notes" },
+  ],
+  documents: [
+    {
+      id: "doc-legacy",
+      workspaceId: "workspace-legacy",
+      folderId: "folder-legacy",
+      title: "Kept.md",
+      content: "# Kept\n\nDo not lose this.",
+      updatedAt: "2026-11-02T00:00:00.000Z",
+    },
+  ],
   activeWorkspaceId: "workspace-legacy",
   openDocumentIds: ["doc-legacy"],
   activeDocumentId: "doc-legacy",
   recentDocumentIds: ["doc-legacy"],
-  preferences: { theme: "light", fontSize: 15, wordWrap: false, autoSaveDelay: 1200, aiProviderId: "gemini", aiModelId: "gemini-2.5-flash" },
+  preferences: {
+    theme: "light",
+    fontSize: 15,
+    wordWrap: false,
+    autoSaveDelay: 1200,
+    aiProviderId: "gemini",
+    aiModelId: "gemini-2.5-flash",
+  },
 };
 
 describe("IndexedDB versioned migration", () => {
@@ -70,14 +85,21 @@ describe("IndexedDB versioned migration", () => {
     await deleteAppDatabase();
   });
 
-  it("adds the conversation, message, usage, and meta stores without touching existing data", async () => {
+  it("adds the conversation, message, usage, meta, and RAG stores without touching existing data", async () => {
     await createVersionOneDatabase(legacyState);
 
     const database = await getAppDatabase();
 
     expect(database.version).toBe(APP_DATABASE_VERSION);
-    expect(APP_DATABASE_VERSION).toBe(2);
-    for (const store of [CONVERSATION_STORE, MESSAGE_STORE, USAGE_STORE, APP_META_STORE]) {
+    expect(APP_DATABASE_VERSION).toBe(3);
+    for (const store of [
+      CONVERSATION_STORE,
+      MESSAGE_STORE,
+      USAGE_STORE,
+      APP_META_STORE,
+      RAG_CHUNK_STORE,
+      RAG_INDEX_META_STORE,
+    ]) {
       expect(database.objectStoreNames.contains(store)).toBe(true);
     }
     expect(database.objectStoreNames.contains(WORKSPACE_STATE_STORE)).toBe(true);
@@ -90,7 +112,9 @@ describe("IndexedDB versioned migration", () => {
     await createVersionOneDatabase(legacyState);
     const database = await getAppDatabase();
 
-    const conversations = database.transaction(CONVERSATION_STORE, "readonly").objectStore(CONVERSATION_STORE);
+    const conversations = database
+      .transaction(CONVERSATION_STORE, "readonly")
+      .objectStore(CONVERSATION_STORE);
     expect(conversations.indexNames.contains("workspaceId")).toBe(true);
     expect(conversations.indexNames.contains("updatedAt")).toBe(true);
 
@@ -100,6 +124,15 @@ describe("IndexedDB versioned migration", () => {
 
     const usage = database.transaction(USAGE_STORE, "readonly").objectStore(USAGE_STORE);
     expect(usage.indexNames.contains("timestamp")).toBe(true);
+
+    const chunks = database.transaction(RAG_CHUNK_STORE, "readonly").objectStore(RAG_CHUNK_STORE);
+    expect(chunks.indexNames.contains("workspaceId")).toBe(true);
+    expect(chunks.indexNames.contains("workspaceDocument")).toBe(true);
+
+    const ragMeta = database
+      .transaction(RAG_INDEX_META_STORE, "readonly")
+      .objectStore(RAG_INDEX_META_STORE);
+    expect(ragMeta.indexNames.contains("workspaceDocument")).toBe(true);
   });
 
   it("is idempotent when the database is already at the current version", async () => {

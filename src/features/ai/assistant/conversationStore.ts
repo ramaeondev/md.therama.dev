@@ -16,6 +16,7 @@ import {
 } from "./conversationStorage";
 
 import type { ProviderUsage } from "../providers/types";
+import type { RetrievalSource } from "../rag/types";
 
 /**
  * Conversation operations used by the Assistant UI.
@@ -102,6 +103,7 @@ export type AppendMessageInput = {
   providerId?: string;
   modelId?: string;
   error?: string;
+  sources?: RetrievalSource[];
   now?: string;
 };
 /**

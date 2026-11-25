@@ -1,4 +1,5 @@
 import type { ProviderUsage } from "../providers/types";
+import type { RetrievalSource } from "../rag/types";
 
 export type Conversation = {
   id: string;
@@ -44,6 +45,7 @@ export type ConversationMessage = {
   modelId?: string;
   /** Safe, user-facing failure summary. Never raw provider payloads. */
   error?: string;
+  sources?: RetrievalSource[];
 };
 
 export type CreateConversationInput = {
@@ -92,6 +94,7 @@ export function createConversationMessage(input: {
   providerId?: string;
   modelId?: string;
   error?: string;
+  sources?: RetrievalSource[];
   now?: string;
 }): ConversationMessage {
   return {
@@ -106,6 +109,7 @@ export function createConversationMessage(input: {
     ...(input.providerId ? { providerId: input.providerId } : {}),
     ...(input.modelId ? { modelId: input.modelId } : {}),
     ...(input.error ? { error: input.error } : {}),
+    ...(input.sources?.length ? { sources: input.sources } : {}),
   };
 }
 

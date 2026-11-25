@@ -16,9 +16,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch";
 import { isAbortError, ProviderError } from "../providers/errors";
 import type { ProviderUsage } from "../providers/types";
+import { EmbeddingError } from "../embeddings/errors";
+import { retrieveWorkspaceContext } from "../rag/ragService";
+import type { RetrievalSource } from "../rag/types";
 import { streamAssistantReplyEvents } from "./chatService";
 import {
   appendMessage,
@@ -56,6 +58,7 @@ type AssistantPanelProps = {
   providerLabel?: string | null;
   modelId: string | null;
   onConfigure: () => void;
+  onOpenSource?: (documentId: string, headingPath: string[]) => void;
 };
 
 /** Short, human label for an assistant reply's attribution. */
@@ -82,6 +85,7 @@ export function AssistantPanel({
   providerLabel,
   modelId,
   onConfigure,
+  onOpenSource,
 }: AssistantPanelProps) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -93,7 +97,7 @@ export function AssistantPanel({
     null,
   );
   const [value, setValue] = useState("");
-  const [contextEnabled, setContextEnabled] = useState(false);
+  const [contextMode, setContextMode] = useState<"none" | "active-document" | "workspace">("none");
   const [isGenerating, setIsGenerating] = useState(false);
   const canChat = isConnected && Boolean(modelId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -147,7 +151,7 @@ export function AssistantPanel({
       workspaceId,
       providerId: providerId ?? "gemini",
       modelId: modelId ?? "",
-      ...(contextEnabled && documentId ? { documentId } : {}),
+      ...(contextMode === "active-document" && documentId ? { documentId } : {}),
     });
     conversationRef.current = created;
     setConversation(created);
@@ -210,7 +214,8 @@ export function AssistantPanel({
     if (!prompt || runningRef.current || !isConnected || !modelId) return;
 
     const target = await ensureConversation();
-    const contextUsed = contextEnabled && Boolean(documentTitle) && Boolean(documentContent);
+    const contextUsed =
+      contextMode === "active-document" && Boolean(documentTitle) && Boolean(documentContent);
 
     // A retry replaces the trailing assistant reply instead of appending to it.
     const history = retry
@@ -256,6 +261,7 @@ export function AssistantPanel({
     // switch mid-stream can never mislabel a reply.
     let responseProviderId: string | undefined;
     let responseModelId: string | undefined;
+    let responseSources: RetrievalSource[] = [];
     let finalStatus: ConversationMessageStatus = "complete";
     let failureMessage: string | undefined;
 
@@ -264,12 +270,19 @@ export function AssistantPanel({
         .filter((message) => message.role === "user" || message.role === "assistant")
         .map(({ role, content }) => ({ role, content }));
 
+      const workspaceContext =
+        contextMode === "workspace"
+          ? await retrieveWorkspaceContext(workspaceId, prompt, { signal: controller.signal })
+          : undefined;
+      responseSources = workspaceContext?.sources ?? [];
+
       for await (const event of streamAssistantReplyEvents({
         model: modelId,
         messages: requestMessages,
         ...(contextUsed && documentTitle
           ? { documentContext: { title: documentTitle, content: documentContent } }
           : {}),
+        ...(workspaceContext ? { workspaceContext: workspaceContext.text } : {}),
         signal: controller.signal,
         conversationId: target.id,
       })) {
@@ -297,7 +310,9 @@ export function AssistantPanel({
         failureMessage =
           error instanceof ProviderError
             ? error.message
-            : "The response could not be completed. Try again.";
+            : error instanceof EmbeddingError
+              ? error.message
+              : "The response could not be completed. Try again.";
       }
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null;
@@ -318,6 +333,7 @@ export function AssistantPanel({
         ...(usage ? { usage } : {}),
         ...(attributedProviderId ? { providerId: attributedProviderId } : {}),
         ...(attributedModelId ? { modelId: attributedModelId } : {}),
+        ...(responseSources.length ? { sources: responseSources } : {}),
         ...(failureMessage ? { error: failureMessage } : {}),
       });
       setMessages((current) =>
@@ -333,6 +349,7 @@ export function AssistantPanel({
                 status: finalStatus,
                 ...(attributedProviderId ? { providerId: attributedProviderId } : {}),
                 ...(attributedModelId ? { modelId: attributedModelId } : {}),
+                ...(responseSources.length ? { sources: responseSources } : {}),
               }
             : message,
         ),
@@ -490,24 +507,37 @@ export function AssistantPanel({
       <div className="flex shrink-0 flex-col gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="truncate text-[10px] font-medium">
-              {documentTitle ?? "No document selected"}
-            </div>
             <div className="mt-0.5 truncate text-[9px] text-muted-foreground">
               {workspaceName} ·{" "}
-              {contextEnabled && documentTitle ? "document context on" : "general answers"}
+              {contextMode === "workspace"
+                ? "workspace context"
+                : contextMode === "active-document"
+                  ? "active document context"
+                  : "no document context"}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-[10px] text-muted-foreground">Use document</span>
-            <Switch
-              checked={contextEnabled}
-              onCheckedChange={setContextEnabled}
-              disabled={!documentTitle}
-              aria-label="Use current document as context"
-            />
-          </div>
         </div>
+        <label className="space-y-1 text-[10px]">
+          <span className="text-muted-foreground">Answer using</span>
+          <select
+            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+            value={contextMode}
+            onChange={(event) => setContextMode(event.target.value as typeof contextMode)}
+            aria-label="Answer using"
+          >
+            <option value="none">No document context</option>
+            <option value="active-document" disabled={!documentTitle}>
+              Active document
+            </option>
+            <option value="workspace">Entire workspace</option>
+          </select>
+        </label>
+        {contextMode === "workspace" && (
+          <p className="text-[9px] leading-4 text-muted-foreground">
+            Relevant excerpts are retrieved locally and sent with your question to the selected chat
+            provider.
+          </p>
+        )}
         <div
           className="truncate border-t border-border pt-2 text-[9px] text-muted-foreground"
           title={modelId ?? undefined}
@@ -542,9 +572,11 @@ export function AssistantPanel({
           </div>
           <h2 className="mt-4 text-sm font-medium">What are you working on?</h2>
           <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">
-            {contextEnabled && documentTitle
+            {contextMode === "active-document" && documentTitle
               ? `Answers can refer to ${documentTitle}.`
-              : "Ask a question or choose a prompt to get started."}
+              : contextMode === "workspace"
+                ? "Ask about information across your indexed documents."
+                : "Ask a question or choose a prompt to get started."}
           </p>
           <div className="mt-5 w-full text-left">
             <div className="mb-2 text-[10px] font-medium uppercase text-muted-foreground">
@@ -597,6 +629,25 @@ export function AssistantPanel({
                     <LoaderCircle className="h-3 w-3 animate-spin" /> Thinking…
                   </div>
                 ) : null}
+                {message.sources && message.sources.length > 0 && (
+                  <div className="mt-3 space-y-1 border-t border-border pt-2" aria-label="Sources">
+                    <div className="text-[9px] font-semibold uppercase text-muted-foreground">
+                      Sources
+                    </div>
+                    {message.sources.map((source) => (
+                      <button
+                        key={source.chunkId}
+                        type="button"
+                        className="block w-full truncate text-left text-[10px] text-primary underline-offset-2 hover:underline"
+                        title={`${source.documentTitle}${source.headingPath.length ? ` → ${source.headingPath.join(" → ")}` : ""}`}
+                        onClick={() => onOpenSource?.(source.documentId, source.headingPath)}
+                      >
+                        {source.documentTitle}
+                        {source.headingPath.length ? ` → ${source.headingPath.join(" → ")}` : ""}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {message.status === "failed" && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-destructive">
                     <span>{message.error}</span>
