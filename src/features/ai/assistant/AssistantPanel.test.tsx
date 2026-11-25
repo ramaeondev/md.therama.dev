@@ -281,14 +281,18 @@ describe("Assistant conversation UI", () => {
     await typeAndSend("Delete me");
     await waitForConversationTitled(baseProps.workspaceId, "Delete me");
 
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     await openHistoryEntry("Delete Delete me");
     await act(async () => {
       screen.getByLabelText("Delete Delete me").click();
     });
 
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Delete “Delete me”? This cannot be undone.");
+    await act(async () => {
+      screen.getByRole("button", { name: "Delete" }).click();
+    });
+
     await waitFor(async () => expect(await listConversations(baseProps.workspaceId)).toEqual([]));
-    confirmSpy.mockRestore();
   });
 
   it("shows a failed assistant reply and offers a retry", async () => {

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import type { ProviderModel } from "../providers/types";
 import type { CustomProviderDefinition } from "./customProviderStorage";
@@ -71,9 +72,10 @@ const builtInCards: ProviderCardConfig[] = [
  * AI provider settings for built-in providers and custom OpenAI-compatible
  * instances.
  *
- * Keys are typed into masked fields and handed to an in-memory session; this
- * component never persists or logs them. Connected providers stay listed
- * together so the user can switch without reloading the page.
+ * Keys are typed into masked fields and handed to a provider session, which
+ * keeps them on this device until the user disconnects. This component never
+ * logs a key or copies it into workspace settings. Connected providers stay
+ * listed together so the user can switch without reloading the page.
  */
 export function ProviderSettingsPanel({
   connectedProviders,
@@ -109,8 +111,9 @@ export function ProviderSettingsPanel({
       <div>
         <h3 className="text-sm font-medium">AI providers</h3>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          Connect one or more providers. Keys are held in memory for this browser tab, sent directly
-          to the provider, and never saved with your workspace.
+          Connect one or more providers. Keys are kept on this device so a refresh does not
+          disconnect you; a key is sent only to its own provider and is removed when you disconnect
+          it.
         </p>
       </div>
 
@@ -182,6 +185,7 @@ function ProviderCard({
   const apiKeyRef = useRef<HTMLInputElement>(null);
   const [keyRequired, setKeyRequired] = useState(false);
   const [modelFilter, setModelFilter] = useState("");
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
 
   const models = connected?.models ?? [];
   const chatModels = models.filter((model) => model.capabilities.textGeneration);
@@ -232,20 +236,24 @@ function ProviderCard({
             title={`Remove ${config.displayName}`}
             aria-label={`Remove ${config.displayName}`}
             disabled={busy}
-            onClick={() => {
-              if (
-                !window.confirm(
-                  `Remove the ${config.displayName} provider? Its saved configuration is deleted; the key is already only in memory.`,
-                )
-              )
-                return;
-              void onRemoveCustom(config.providerId);
-            }}
+            onClick={() => setConfirmRemoveOpen(true)}
           >
             <Trash2 />
           </Button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmRemoveOpen}
+        onOpenChange={setConfirmRemoveOpen}
+        title={`Remove ${config.displayName}`}
+        description={`Remove the ${config.displayName} provider? Its saved configuration and stored key are deleted from this device.`}
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          void onRemoveCustom(config.providerId);
+        }}
+      />
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <Input
@@ -531,9 +539,9 @@ function AddCustomProviderForm({
               <span className="font-medium text-foreground">
                 Send requests through this app's relay.
               </span>{" "}
-              Use this when the endpoint blocks browser requests (CORS). Your API key is still typed
-              here and never saved, but it is forwarded by this app's server on the way to the
-              endpoint instead of going straight from your browser.
+              Use this when the endpoint blocks browser requests (CORS). Your API key is typed here
+              and kept on this device until you disconnect, but it is forwarded by this app's server
+              on the way to the endpoint instead of going straight from your browser.
             </span>
           </label>
           {error && (

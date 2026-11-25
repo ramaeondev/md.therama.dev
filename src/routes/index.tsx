@@ -33,7 +33,9 @@ import { toast } from "sonner";
 import JSZip from "jszip";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { AssistantPanel } from "@/features/ai/assistant/AssistantPanel";
@@ -49,6 +51,7 @@ import {
   listConnectedProviders,
   providerDisplayName,
   removeCustomProvider,
+  restoreConnectedProviders,
   saveCustomProvider,
   setActiveProvider,
   testProviderConnection,
@@ -69,9 +72,24 @@ import {
   renameMarkdownDocument,
 } from "@/features/workspace/model";
 import { indexedDbStorage } from "@/features/workspace/storage";
-import type { MarkdownDocument, WorkspaceState } from "@/features/workspace/types";
+import type { MarkdownDocument, WorkspaceFolder, WorkspaceState } from "@/features/workspace/types";
 
 type ViewMode = "editor" | "split" | "preview";
+
+type WorkspaceModal =
+  | { type: "new-document"; folderId: string | null; defaultValue: string }
+  | { type: "new-folder"; parentId: string | null }
+  | { type: "rename-document"; document: MarkdownDocument }
+  | { type: "rename-folder"; folder: WorkspaceFolder }
+  | { type: "new-workspace" }
+  | { type: "delete-document"; document: MarkdownDocument }
+  | {
+      type: "delete-folder";
+      folder: WorkspaceFolder;
+      descendants: Set<string>;
+      removedDocumentIds: Set<string>;
+      description: string;
+    };
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -122,6 +140,7 @@ function WorkspacePage() {
   const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>("general");
   const [createdWorkspaceId, setCreatedWorkspaceId] = useState<string | null>(null);
+  const [workspaceModal, setWorkspaceModal] = useState<WorkspaceModal | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<MarkdownEditorHandle>(null);
@@ -191,9 +210,8 @@ function WorkspacePage() {
     document.documentElement.classList.toggle("dark", state.preferences.theme === "dark");
   }, [hydrated, state.preferences.theme]);
 
-  // Restore saved compatible-provider definitions so their adapters are
-  // registered before the user opens settings or sends a message. Keys are not
-  // restored: every provider needs its key re-entered after a reload.
+  // Register saved compatible-provider definitions so their adapters exist
+  // before settings or chat resolve a provider.
   useEffect(() => {
     let cancelled = false;
     void ensureCustomProvidersLoaded().then((definitions) => {
@@ -203,6 +221,47 @@ function WorkspacePage() {
       cancelled = true;
     };
   }, []);
+
+  // Restore providers whose keys were kept from a previous visit, so a refresh
+  // does not make the user paste the key again. A provider stays connected
+  // until the user clears it in Preferences.
+  useEffect(() => {
+    if (!hydrated) return;
+    const preferredProviderId = state.preferences.aiProviderId;
+    let cancelled = false;
+    void restoreConnectedProviders(preferredProviderId).then((restored) => {
+      if (cancelled) return;
+      setConnectedProviders(restored);
+      const activeId = getActiveProviderId();
+      setActiveProviderId(activeId);
+      if (!activeId) return;
+      // Keep preferences pointing at a provider that actually has a key, and
+      // restore its saved model when it is still available.
+      setState((current) => {
+        const models = restored.find((entry) => entry.providerId === activeId)?.models ?? [];
+        const modelId =
+          models.find((model) => model.id === current.preferences.aiModelId)?.id ??
+          current.preferences.aiSelectedModels?.[activeId] ??
+          models.find((model) => model.capabilities.textGeneration)?.id ??
+          models[0]?.id ??
+          null;
+        if (
+          current.preferences.aiProviderId === activeId &&
+          current.preferences.aiModelId === modelId
+        )
+          return current;
+        return {
+          ...current,
+          preferences: { ...current.preferences, aiProviderId: activeId, aiModelId: modelId },
+        };
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Runs once per hydrated load; later preference edits must not re-restore.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -258,10 +317,8 @@ function WorkspacePage() {
     [updateState],
   );
 
-  function createDocument(folderId: string | null = null, title?: string, content?: string) {
-    const fallback = `Untitled ${documents.length + 1}`;
-    const name = title ?? window.prompt("Name this Markdown file", fallback);
-    if (!name?.trim()) return;
+  function commitCreateDocument(folderId: string | null, name: string, content?: string) {
+    if (!name.trim()) return;
     const document = createMarkdownDocument(state.activeWorkspaceId, folderId, name);
     if (content !== undefined) {
       document.content = content;
@@ -276,38 +333,37 @@ function WorkspacePage() {
     }));
   }
 
-  function createFolder(parentId: string | null = null, name?: string) {
-    const folderName = name ?? window.prompt("Name this folder");
-    if (!folderName?.trim()) return;
-    const folder = createWorkspaceFolder(state.activeWorkspaceId, parentId, folderName);
+  function createDocument(folderId: string | null = null, title?: string, content?: string) {
+    if (title !== undefined) {
+      commitCreateDocument(folderId, title, content);
+      return;
+    }
+    const fallback = `Untitled ${documents.length + 1}`;
+    setWorkspaceModal({ type: "new-document", folderId, defaultValue: fallback });
+  }
+
+  function commitCreateFolder(parentId: string | null, name: string) {
+    if (!name.trim()) return;
+    const folder = createWorkspaceFolder(state.activeWorkspaceId, parentId, name);
     updateState((current) => ({ ...current, folders: [...current.folders, folder] }));
+  }
+
+  function createFolder(parentId: string | null = null, name?: string) {
+    if (name !== undefined) {
+      commitCreateFolder(parentId, name);
+      return;
+    }
+    setWorkspaceModal({ type: "new-folder", parentId });
   }
 
   function handleExplorerAction(action: ExplorerAction) {
     if (action.type === "new-document") createDocument(action.folderId);
     if (action.type === "new-folder") createFolder(action.folderId);
     if (action.type === "rename-document") {
-      const title = window.prompt(
-        "Rename document",
-        action.document.title.replace(/\.(md|markdown|txt)$/i, ""),
-      );
-      if (title?.trim())
-        updateState((current) => ({
-          ...current,
-          documents: current.documents.map((document) =>
-            document.id === action.document.id ? renameMarkdownDocument(document, title) : document,
-          ),
-        }));
+      setWorkspaceModal({ type: "rename-document", document: action.document });
     }
     if (action.type === "rename-folder") {
-      const name = window.prompt("Rename folder", action.folder.name);
-      if (name?.trim())
-        updateState((current) => ({
-          ...current,
-          folders: current.folders.map((folder) =>
-            folder.id === action.folder.id ? { ...folder, name: name.trim() } : folder,
-          ),
-        }));
+      setWorkspaceModal({ type: "rename-folder", folder: action.folder });
     }
     if (action.type === "duplicate-document") {
       const copy = duplicateMarkdownDocument(action.document);
@@ -315,29 +371,30 @@ function WorkspacePage() {
       toast.success(`Created ${copy.title}`);
     }
     if (action.type === "delete-document") {
-      if (!window.confirm(`Delete “${action.document.title}”? This cannot be undone.`)) return;
-      updateState((current) => {
-        const remaining = current.documents.filter(
-          (document) => document.id !== action.document.id,
-        );
-        const nextActive =
-          current.activeDocumentId === action.document.id
-            ? (remaining.find((document) => document.workspaceId === current.activeWorkspaceId)
-                ?.id ?? null)
-            : current.activeDocumentId;
-        return {
-          ...current,
-          documents: remaining,
-          openDocumentIds: current.openDocumentIds.filter((id) => id !== action.document.id),
-          recentDocumentIds: current.recentDocumentIds.filter((id) => id !== action.document.id),
-          activeDocumentId: nextActive,
-        };
-      });
+      setWorkspaceModal({ type: "delete-document", document: action.document });
     }
     if (action.type === "delete-folder") deleteFolder(action.folder);
   }
 
-  function deleteFolder(folder: (typeof folders)[number]) {
+  function confirmDeleteDocument(target: MarkdownDocument) {
+    updateState((current) => {
+      const remaining = current.documents.filter((document) => document.id !== target.id);
+      const nextActive =
+        current.activeDocumentId === target.id
+          ? (remaining.find((document) => document.workspaceId === current.activeWorkspaceId)?.id ??
+            null)
+          : current.activeDocumentId;
+      return {
+        ...current,
+        documents: remaining,
+        openDocumentIds: current.openDocumentIds.filter((id) => id !== target.id),
+        recentDocumentIds: current.recentDocumentIds.filter((id) => id !== target.id),
+        activeDocumentId: nextActive,
+      };
+    });
+  }
+
+  function deleteFolder(folder: WorkspaceFolder) {
     const descendants = new Set<string>([folder.id]);
     let hasNewDescendant = true;
     while (hasNewDescendant) {
@@ -352,11 +409,20 @@ function WorkspacePage() {
     const contained = documents.filter(
       (document) => document.folderId && descendants.has(document.folderId),
     );
-    const confirmText = contained.length
-      ? `Delete “${folder.name}” and its ${contained.length} document(s)?`
-      : `Delete folder “${folder.name}”?`;
-    if (!window.confirm(confirmText)) return;
+    const description = contained.length
+      ? `Delete “${folder.name}” and its ${contained.length} document(s)? This cannot be undone.`
+      : `Delete folder “${folder.name}”? This cannot be undone.`;
     const removedDocumentIds = new Set(contained.map((document) => document.id));
+    setWorkspaceModal({
+      type: "delete-folder",
+      folder,
+      descendants,
+      removedDocumentIds,
+      description,
+    });
+  }
+
+  function confirmDeleteFolder(descendants: Set<string>, removedDocumentIds: Set<string>) {
     updateState((current) => {
       const remaining = current.documents.filter(
         (document) => !removedDocumentIds.has(document.id),
@@ -377,8 +443,12 @@ function WorkspacePage() {
   }
 
   function createWorkspace() {
-    const name = window.prompt("Name your workspace", "New workspace");
-    if (!name?.trim()) return;
+    setWorkspaceMenuOpen(false);
+    setWorkspaceModal({ type: "new-workspace" });
+  }
+
+  function commitCreateWorkspace(name: string) {
+    if (!name.trim()) return;
     const workspace = createWorkspaceState(name);
     updateState((current) => ({
       ...current,
@@ -678,8 +748,9 @@ function WorkspacePage() {
           error instanceof ProviderError
             ? error.message
             : "Connection failed. Check the key and endpoint, then try again.";
-        disconnectProvider(providerId);
-        refreshProviderState();
+        // Keep the provider connected: a transient failure (offline, provider
+        // outage) must not erase a key the user chose to keep. The key is only
+        // removed when the user disconnects the provider.
         setProviderStatuses((current) => ({ ...current, [providerId]: "failed" }));
         setProviderErrors((current) => ({ ...current, [providerId]: message }));
         toast.error(message);
@@ -1298,6 +1369,122 @@ function WorkspacePage() {
         onSelectModel={handleSelectModel}
         onAddCustomProvider={handleAddCustomProvider}
         onRemoveCustomProvider={handleRemoveCustomProvider}
+      />
+
+      <PromptDialog
+        open={
+          workspaceModal?.type === "new-document" ||
+          workspaceModal?.type === "new-folder" ||
+          workspaceModal?.type === "rename-document" ||
+          workspaceModal?.type === "rename-folder" ||
+          workspaceModal?.type === "new-workspace"
+        }
+        onOpenChange={(open) => {
+          if (!open) setWorkspaceModal(null);
+        }}
+        title={
+          workspaceModal?.type === "new-document"
+            ? "New Markdown file"
+            : workspaceModal?.type === "new-folder"
+              ? "New folder"
+              : workspaceModal?.type === "rename-document"
+                ? "Rename document"
+                : workspaceModal?.type === "rename-folder"
+                  ? "Rename folder"
+                  : workspaceModal?.type === "new-workspace"
+                    ? "New workspace"
+                    : ""
+        }
+        label={
+          workspaceModal?.type === "new-document"
+            ? "File name"
+            : workspaceModal?.type === "new-folder"
+              ? "Folder name"
+              : workspaceModal?.type === "rename-document"
+                ? "Document name"
+                : workspaceModal?.type === "rename-folder"
+                  ? "Folder name"
+                  : workspaceModal?.type === "new-workspace"
+                    ? "Workspace name"
+                    : undefined
+        }
+        placeholder={workspaceModal?.type === "new-folder" ? "e.g. Meeting notes" : undefined}
+        defaultValue={
+          workspaceModal?.type === "new-document"
+            ? workspaceModal.defaultValue
+            : workspaceModal?.type === "rename-document"
+              ? workspaceModal.document.title.replace(/\.(md|markdown|txt)$/i, "")
+              : workspaceModal?.type === "rename-folder"
+                ? workspaceModal.folder.name
+                : workspaceModal?.type === "new-workspace"
+                  ? "New workspace"
+                  : ""
+        }
+        submitLabel={
+          workspaceModal?.type === "rename-document" || workspaceModal?.type === "rename-folder"
+            ? "Rename"
+            : "Create"
+        }
+        onSubmit={(value) => {
+          if (!workspaceModal) return;
+          if (workspaceModal.type === "new-document") {
+            commitCreateDocument(workspaceModal.folderId, value);
+          } else if (workspaceModal.type === "new-folder") {
+            commitCreateFolder(workspaceModal.parentId, value);
+          } else if (workspaceModal.type === "rename-document") {
+            updateState((current) => ({
+              ...current,
+              documents: current.documents.map((document) =>
+                document.id === workspaceModal.document.id
+                  ? renameMarkdownDocument(document, value)
+                  : document,
+              ),
+            }));
+          } else if (workspaceModal.type === "rename-folder") {
+            updateState((current) => ({
+              ...current,
+              folders: current.folders.map((folder) =>
+                folder.id === workspaceModal.folder.id ? { ...folder, name: value } : folder,
+              ),
+            }));
+          } else if (workspaceModal.type === "new-workspace") {
+            commitCreateWorkspace(value);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={
+          workspaceModal?.type === "delete-document" || workspaceModal?.type === "delete-folder"
+        }
+        onOpenChange={(open) => {
+          if (!open) setWorkspaceModal(null);
+        }}
+        title={
+          workspaceModal?.type === "delete-document"
+            ? "Delete document"
+            : workspaceModal?.type === "delete-folder"
+              ? "Delete folder"
+              : ""
+        }
+        description={
+          workspaceModal?.type === "delete-document"
+            ? `Delete “${workspaceModal.document.title}”? This cannot be undone.`
+            : workspaceModal?.type === "delete-folder"
+              ? workspaceModal.description
+              : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => {
+          if (!workspaceModal) return;
+          if (workspaceModal.type === "delete-document") {
+            confirmDeleteDocument(workspaceModal.document);
+          } else if (workspaceModal.type === "delete-folder") {
+            confirmDeleteFolder(workspaceModal.descendants, workspaceModal.removedDocumentIds);
+          }
+          setWorkspaceModal(null);
+        }}
       />
     </main>
   );

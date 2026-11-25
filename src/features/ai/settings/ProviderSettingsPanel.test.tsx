@@ -343,7 +343,6 @@ describe("AI provider settings UI", () => {
 
   it("lists a saved compatible provider and can remove it after confirmation", async () => {
     const onRemoveCustomProvider = vi.fn().mockResolvedValue(undefined);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <ProviderSettingsPanel
         {...baseProps({
@@ -363,7 +362,11 @@ describe("AI provider settings UI", () => {
     await act(async () => {
       screen.getByRole("button", { name: "Remove 100milionseek" }).click();
     });
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(/Remove the 100milionseek provider\?/);
+    await act(async () => {
+      screen.getByRole("button", { name: "Remove" }).click();
+    });
     expect(onRemoveCustomProvider).toHaveBeenCalledWith("openai-compatible:100milionseek");
-    confirmSpy.mockRestore();
   });
 });

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { isAbortError, ProviderError } from "../providers/errors";
@@ -88,6 +89,9 @@ export function AssistantPanel({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [pendingDeleteConversation, setPendingDeleteConversation] = useState<Conversation | null>(
+    null,
+  );
   const [value, setValue] = useState("");
   const [contextEnabled, setContextEnabled] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -183,8 +187,12 @@ export function AssistantPanel({
     }
   }
 
-  async function removeConversation(target: Conversation) {
-    if (!window.confirm(`Delete “${target.title}”? This cannot be undone.`)) return;
+  function removeConversation(target: Conversation) {
+    setPendingDeleteConversation(target);
+  }
+
+  async function confirmRemoveConversation(target: Conversation) {
+    setPendingDeleteConversation(null);
     await deleteConversation(target);
     const remaining = await listConversations(workspaceId);
     setConversations(remaining);
@@ -521,7 +529,7 @@ export function AssistantPanel({
           <p className="mt-1 max-w-[230px] text-xs leading-5 text-muted-foreground">
             {isConnected
               ? "Select an available model in Preferences before sending a message."
-              : "Your API key stays in this browser session and is never saved with your documents."}
+              : "Your API key stays on this device and is never saved with your documents."}
           </p>
           <Button className="mt-4" size="sm" onClick={onConfigure}>
             {isConnected ? "Choose model" : "Configure providers"}
@@ -669,6 +677,25 @@ export function AssistantPanel({
           Enter to send · Shift+Enter for a new line
         </p>
       </div>
+      <ConfirmDialog
+        open={Boolean(pendingDeleteConversation)}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteConversation(null);
+        }}
+        title="Delete conversation"
+        description={
+          pendingDeleteConversation
+            ? `Delete “${pendingDeleteConversation.title}”? This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => {
+          if (pendingDeleteConversation) {
+            void confirmRemoveConversation(pendingDeleteConversation);
+          }
+        }}
+      />
     </aside>
   );
 }
