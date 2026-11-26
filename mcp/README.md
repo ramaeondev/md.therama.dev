@@ -1,40 +1,31 @@
-# Local Markdown MCP server
+# Markdown AI Workspace MCP server
 
-This MCP server gives local AI clients access to Markdown workspaces opened in
-Markdown AI Workspace. It uses MCP stdio; it does not run an HTTP server or
-connect to `api.therama.dev`.
+The MCP server is distributed as a standalone npm package so users do not need
+to clone the Markdown AI Workspace UI repository. The intended installation is
+`npx -y @ramaeon/md-workspace-mcp`; it runs locally over stdio and accesses only
+the folder selected by `MD_WORKSPACE_ROOT`.
 
-The application stores Markdown files in the folder the user selects. A local
-`.markdown-ai-workspace.json` file contains workspace and folder metadata plus
-content hashes for safe updates. It does not contain document text, chat
-history, provider credentials, or the local semantic index.
+> **Release status:** Version `0.1.0` is published on npm. It has not yet been
+> listed in the MCP Registry.
 
 ## Connect a workspace
 
-1. Open the app and go to **Preferences → Storage**.
-2. Choose **Connect local folder** and select an empty folder. The current
-   browser workspace is copied into it; the IndexedDB copy is kept as a
-   fallback. Existing folders created by the app can be reconnected.
-3. Install the local server dependencies from the repository root:
-
-   ```sh
-   npm install --prefix mcp
-   ```
-
-4. Add the server to your MCP client configuration. Replace the repository and
-   workspace folder paths with absolute paths on this computer:
+1. In Markdown AI Workspace, open **Preferences → storage → Connect local
+   folder** and select an empty folder. The app writes Markdown files and the
+   `.markdown-ai-workspace.json` metadata manifest there. The browser copy is
+   retained when switching storage modes.
+2. In your MCP client's server settings, add a server named
+   `markdown-workspace` using this configuration. Update `MD_WORKSPACE_ROOT`
+   to the absolute path of the folder selected in the app.
 
    ```json
    {
      "mcpServers": {
        "markdown-workspace": {
-         "command": "node",
-         "args": [
-           "/path/to/md.therama.dev/mcp/node_modules/tsx/dist/cli.mjs",
-           "/path/to/md.therama.dev/mcp/src/index.ts"
-         ],
+         "command": "npx",
+         "args": ["-y", "@ramaeon/md-workspace-mcp@0.1.1"],
          "env": {
-           "MD_WORKSPACE_ROOT": "/path/to/your/Markdown-workspace",
+           "MD_WORKSPACE_ROOT": "/absolute/path/to/your/Markdown-folder",
            "MD_MCP_READ_ONLY": "true"
          }
        }
@@ -42,14 +33,24 @@ history, provider credentials, or the local semantic index.
    }
    ```
 
-The MCP host starts the process over stdio. Keep `MD_MCP_READ_ONLY=true` for
-read-only access. To allow document and folder creation, updates, and renames,
-set it to `false` in that host's configuration and restart the MCP server.
-There are no delete tools in this first version. Document updates require the
-current content hash, which prevents a stale agent response from overwriting a
-newer edit.
+3. Save the MCP client configuration and restart or reload its connection.
+   The first launch downloads the MCP package and its runtime dependencies;
+   later launches run the installed cached package. Node.js 20 or later is
+   required.
 
-## Available MCP capabilities
+## Access modes
+
+Read-only mode is the default. Keep `MD_MCP_READ_ONLY` set to `true` (or omit
+it) for listing, searching, and reading documents. To allow document and
+folder changes, set it to `false` in the MCP client configuration and restart
+the server. Write mode can create and update documents, rename documents, and
+create folders. It has no delete tools.
+
+Updates and renames require the content hash returned by `read_document`.
+If the file changed after it was read, the server rejects the stale operation
+so an older response cannot silently overwrite newer content.
+
+## Capabilities
 
 ### Tools
 
@@ -58,8 +59,8 @@ newer edit.
 - `read_document`
 - `search_documents`
 - `create_document` (write mode)
-- `update_document` (write mode, requires the hash from `read_document`)
-- `rename_document` (write mode, requires the hash from `read_document`)
+- `update_document` (write mode)
+- `rename_document` (write mode)
 - `create_folder` (write mode)
 
 ### Resources
@@ -76,16 +77,86 @@ newer edit.
 - `proofread-markdown`
 - `summarize-markdown`
 
-The MCP process can access only the root folder specified by
-`MD_WORKSPACE_ROOT`. Provider API keys stay in the browser's separate local
-credential storage and are never passed to this server.
+Prompts are sent to the MCP client's selected model. The server does not call
+an AI provider and does not receive provider API keys from the web app.
 
-## Development
+## Privacy and file access
+
+The process runs on the user's computer. It does not expose an HTTP listener or
+contact `api.therama.dev`. It can access only the folder configured through
+`MD_WORKSPACE_ROOT`. The manifest contains workspace and folder metadata,
+relative Markdown paths, and content hashes; it does not store document bodies,
+chat history, credentials, or the browser's semantic index. Path traversal and
+symlink escapes are rejected.
+
+## Package release and discovery
+
+The npm package is the installable artifact. Releases are published by the
+GitHub Actions workflow at
+`.github/workflows/publish-mcp.yml`; no npm token is stored in GitHub. The
+workflow runs the MCP tests, typecheck, build, package-content check, then
+publishes the package using npm Trusted Publishing (GitHub OIDC).
+
+Configure npm Trusted Publishing for automated releases under the package's
+**Settings → Trusted Publisher**:
+
+- Provider: **GitHub Actions**
+- GitHub organization: `ramaeondev`
+- Repository: `md.therama.dev`
+- Workflow filename: `publish-mcp.yml`
+- Allow direct publishing with `npm publish`
+
+The package name is `@ramaeon/md-workspace-mcp`, under npm user scope
+`@ramaeon`. Configure its Trusted Publisher from that npm account.
+
+After that one-time setup, publish new versions without running `npm publish`
+locally:
+
+1. Update the version in `mcp/package.json`, `mcp/package-lock.json`, and
+   `mcp/server.json` (including its npm package entry).
+2. Commit and push those changes to the `main` branch.
+3. In GitHub, open **Actions → Publish MCP package → Run workflow**, select
+   `main`, enter the matching version, and start the workflow.
+
+The workflow runs only when manually dispatched from `main` and rejects a
+version unless all package metadata fields match. The npm registry
+stores the installable package; after it is published, submit the release to
+the official MCP Registry for discovery. That registry stores metadata, not
+the npm artifact. Source and issues remain in the [Markdown AI Workspace
+GitHub repository](https://github.com/ramaeondev/md.therama.dev).
+
+The registry metadata is prepared in `server.json`; its name matches the
+`mcpName` field in `package.json` and uses the GitHub namespace
+`io.github.ramaeondev/md-workspace`. After publishing the npm package, install
+the official publisher and submit that metadata:
 
 ```sh
-npm --prefix mcp run typecheck
-MD_WORKSPACE_ROOT="/path/to/connected/workspace" npm --prefix mcp start
-npm --prefix mcp test
+brew install mcp-publisher
+cd mcp
+mcp-publisher validate server.json
+mcp-publisher login github
+mcp-publisher publish server.json
 ```
 
-Use the official MCP Inspector to explore tools, resources, and prompts locally.
+The GitHub login must have permission to publish under the `ramaeondev`
+namespace. See the [official Registry publishing guide](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/quickstart.mdx) for other publisher installation options.
+
+## Maintainer development
+
+These commands are for contributors to this repository; end users do not need
+them.
+
+```sh
+npm install --prefix mcp
+npm --prefix mcp run typecheck
+npm --prefix mcp test
+npm --prefix mcp run build
+(cd mcp && npm pack --dry-run)
+```
+
+Run the built server directly with a folder containing
+`.markdown-ai-workspace.json`:
+
+```sh
+MD_WORKSPACE_ROOT="/absolute/path/to/Markdown-folder" node mcp/dist/mcp/src/index.js
+```

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ramaeondev/md-workspace",
+  "title": "Markdown AI Workspace",
+  "description": "Search and edit a Markdown workspace in a folder on your device.",
+  "repository": {
+    "url": "https://github.com/ramaeondev/md.therama.dev",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@ramaeon/md-workspace-mcp",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MD_WORKSPACE_ROOT",
+          "description": "Absolute path to the local Markdown workspace folder.",
+          "isRequired": true,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "MD_MCP_READ_ONLY",
+          "description": "Set false to enable document and folder creation, updates, and renames.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

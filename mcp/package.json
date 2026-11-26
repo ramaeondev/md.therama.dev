@@ -1,11 +1,35 @@
 {
-  "name": "@therama/md-workspace-mcp",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@ramaeon/md-workspace-mcp",
+  "version": "0.1.1",
+  "mcpName": "io.github.ramaeondev/md-workspace",
   "type": "module",
   "description": "Local MCP server for Markdown AI Workspace files",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ramaeondev/md.therama.dev.git",
+    "directory": "mcp"
+  },
+  "homepage": "https://md.therama.dev/guide#mcp",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "markdown-ai-workspace-mcp": "bin/markdown-ai-workspace-mcp.js"
+  },
   "scripts": {
     "start": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test src/repository.test.ts"
   },

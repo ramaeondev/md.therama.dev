@@ -15,7 +15,7 @@
     "test:e2e": "playwright test",
     "test:mcp": "npm --prefix mcp test",
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
-    "test:all": "npm test && npm run test:mcp && npm run typecheck:e2e && npm run test:e2e"
+    "test:all": "npm test && npm run test:mcp && npm --prefix mcp run typecheck && npm --prefix mcp run build && npm run typecheck:e2e && npm run test:e2e"
   },
   "overrides": {
     "rolldown": "1.2.1"

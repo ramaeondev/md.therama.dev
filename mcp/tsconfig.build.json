@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "..",
+    "outDir": "dist",
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "src/index.ts",
+    "src/repository.ts",
+    "../src/features/workspace/localFolderFormat.ts",
+    "../src/features/workspace/types.ts",
+    "../src/features/ai/assistant/writingSkills.ts"
+  ]
+}
