@@ -85,6 +85,7 @@ credential storage and are never passed to this server.
 ```sh
 npm --prefix mcp run typecheck
 MD_WORKSPACE_ROOT="/path/to/connected/workspace" npm --prefix mcp start
+npm --prefix mcp test
 ```
 
 Use the official MCP Inspector to explore tools, resources, and prompts locally.

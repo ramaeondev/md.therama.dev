@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Download,
   FilePlus2,
   FileText,
   Folder,
@@ -24,6 +25,7 @@ export type ExplorerAction =
   | { type: "rename-document"; document: MarkdownDocument }
   | { type: "rename-folder"; folder: WorkspaceFolder }
   | { type: "duplicate-document"; document: MarkdownDocument }
+  | { type: "export-document"; document: MarkdownDocument }
   | { type: "delete-document"; document: MarkdownDocument }
   | { type: "delete-folder"; folder: WorkspaceFolder };
 
@@ -146,7 +148,7 @@ export function WorkspaceExplorer({
   }
 
   return (
-    <aside className="flex h-full min-h-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
+    <aside data-tour="explorer" className="flex h-full min-h-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
       <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
           <FileText className="h-4 w-4" />
@@ -251,6 +253,7 @@ function DocumentRow({
       {!compact && (
         <div className="hidden shrink-0 items-center group-hover:flex group-focus-within:flex">
           <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground" title="Duplicate document" aria-label={`Duplicate ${document.title}`} onClick={() => onAction({ type: "duplicate-document", document })}><Copy /></Button>
+          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground" title="Export document" aria-label={`Export ${document.title}`} onClick={() => onAction({ type: "export-document", document })}><Download /></Button>
           <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground" title="Rename document" aria-label={`Rename ${document.title}`} onClick={() => onAction({ type: "rename-document", document })}><Pencil /></Button>
           <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" title="Delete document" aria-label={`Delete ${document.title}`} onClick={() => onAction({ type: "delete-document", document })}><Trash2 /></Button>
         </div>

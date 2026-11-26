@@ -167,6 +167,12 @@ export function AboutPage() {
             >
               Features
             </a>
+            <Link
+              to="/guide"
+              className="rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              Product guide
+            </Link>
             <Button asChild size="sm" className="gap-2">
               <Link to="/workspace">
                 Open workspace <ArrowRight />

@@ -6,7 +6,8 @@
   "description": "Local MCP server for Markdown AI Workspace files",
   "scripts": {
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/repository.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",

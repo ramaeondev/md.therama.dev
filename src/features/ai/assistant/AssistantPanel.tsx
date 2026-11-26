@@ -386,6 +386,7 @@ export function AssistantPanel({
     <aside
       className="flex h-full min-h-0 flex-col border-l border-border bg-sidebar text-sidebar-foreground"
       aria-label="AI Assistant"
+      data-tour="assistant-panel"
     >
       <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
         <div className="flex min-w-0 items-center gap-2 text-xs font-medium">

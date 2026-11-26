@@ -25,8 +25,9 @@ export type SettingsSection = "general" | "editor" | "storage" | "ai" | "usage" 
 export type ProviderConnectionStatus =
   "not-configured" | "connecting" | "testing" | "connected" | "failed";
 
-type WorkspaceSettingsProps = {
+export type WorkspaceSettingsProps = {
   open: boolean;
+  modal?: boolean;
   onOpenChange: (open: boolean) => void;
   preferences: WorkspacePreferences;
   onChange: (preferences: WorkspacePreferences) => void;
@@ -59,6 +60,7 @@ type WorkspaceSettingsProps = {
 
 export function WorkspaceSettings({
   open,
+  modal = true,
   onOpenChange,
   preferences,
   onChange,
@@ -97,7 +99,7 @@ export function WorkspaceSettings({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} modal={modal} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85dvh] max-w-2xl gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-6 py-5">
           <DialogTitle className="flex items-center gap-2 text-base">
@@ -128,7 +130,7 @@ export function WorkspaceSettings({
           </nav>
           <div className="min-w-0 space-y-6 overflow-y-auto p-6">
             {activeSection === "general" && (
-              <section className="space-y-4">
+              <section data-tour="settings-general" className="space-y-4">
                 <div>
                   <h3 className="text-sm font-medium">Appearance</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -165,7 +167,7 @@ export function WorkspaceSettings({
               </section>
             )}
             {activeSection === "editor" && (
-              <section className="space-y-5">
+              <section data-tour="settings-editor" className="space-y-5">
                 <div>
                   <h3 className="text-sm font-medium">Editor</h3>
                   <p className="mt-1 text-xs text-muted-foreground">Tune the writing surface.</p>
@@ -203,7 +205,7 @@ export function WorkspaceSettings({
               </section>
             )}
             {activeSection === "storage" && (
-              <section className="space-y-5">
+              <section data-tour="settings-storage" className="space-y-5">
                 <div>
                   <h3 className="text-sm font-medium">Local storage</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -242,6 +244,7 @@ export function WorkspaceSettings({
                   <a
                     className="text-primary underline underline-offset-2"
                     href="https://github.com/ramaeondev/markdown-meadow-workspace/blob/main/mcp/README.md"
+                    data-tour="mcp-guide"
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -252,6 +255,7 @@ export function WorkspaceSettings({
               </section>
             )}
             {activeSection === "ai" && (
+              <div data-tour="settings-ai">
               <ProviderSettingsPanel
                 connectedProviders={connectedProviders}
                 activeProviderId={activeProviderId}
@@ -279,10 +283,13 @@ export function WorkspaceSettings({
                 onAddCustomProvider={onAddCustomProvider}
                 onRemoveCustomProvider={onRemoveCustomProvider}
               />
+              </div>
             )}
-            {activeSection === "usage" && <UsageDashboard />}
+            {activeSection === "usage" && <div data-tour="settings-usage"><UsageDashboard /></div>}
             {activeSection === "intelligence" && (
-              <WorkspaceIntelligencePanel workspaceId={workspaceId} documents={documents} />
+              <div data-tour="settings-intelligence">
+                <WorkspaceIntelligencePanel workspaceId={workspaceId} documents={documents} />
+              </div>
             )}
           </div>
         </div>

@@ -43,6 +43,7 @@ export function isLocalWorkspaceManifest(value: unknown): value is LocalWorkspac
     manifest.format === LOCAL_WORKSPACE_FORMAT &&
     manifest.version === LOCAL_WORKSPACE_VERSION &&
     Number.isSafeInteger(manifest.revision) &&
+    manifest.revision! >= 0 &&
     Array.isArray(manifest.workspaces) &&
     Array.isArray(manifest.folders) &&
     Array.isArray(manifest.documents) &&

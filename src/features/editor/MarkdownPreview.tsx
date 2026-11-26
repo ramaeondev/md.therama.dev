@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { isValidElement, useEffect, useRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -19,6 +19,17 @@ export function getMarkdownHeadings(content: string): Heading[] {
 
 function slugify(text: string) {
   return text.toLowerCase().trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, "-");
+}
+
+function markdownText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(markdownText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return markdownText(node.props.children);
+  return "";
+}
+
+function headingId(children: ReactNode) {
+  return slugify(markdownText(children));
 }
 
 function MermaidBlock({ source }: { source: string }) {
@@ -48,20 +59,17 @@ function MermaidBlock({ source }: { source: string }) {
 }
 
 export function MarkdownPreview({ content }: MarkdownPreviewProps) {
-  const headings = useMemo(() => getMarkdownHeadings(content), [content]);
-  let headingIndex = 0;
-
   return (
     <article className="markdown-prose mx-auto w-full max-w-3xl px-7 py-8 md:px-10 md:py-10">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({ children }) => <h1 id={headings[headingIndex++]?.id}>{children}</h1>,
-          h2: ({ children }) => <h2 id={headings[headingIndex++]?.id}>{children}</h2>,
-          h3: ({ children }) => <h3 id={headings[headingIndex++]?.id}>{children}</h3>,
-          h4: ({ children }) => <h4 id={headings[headingIndex++]?.id}>{children}</h4>,
-          h5: ({ children }) => <h5 id={headings[headingIndex++]?.id}>{children}</h5>,
-          h6: ({ children }) => <h6 id={headings[headingIndex++]?.id}>{children}</h6>,
+          h1: ({ children }) => <h1 id={headingId(children)}>{children}</h1>,
+          h2: ({ children }) => <h2 id={headingId(children)}>{children}</h2>,
+          h3: ({ children }) => <h3 id={headingId(children)}>{children}</h3>,
+          h4: ({ children }) => <h4 id={headingId(children)}>{children}</h4>,
+          h5: ({ children }) => <h5 id={headingId(children)}>{children}</h5>,
+          h6: ({ children }) => <h6 id={headingId(children)}>{children}</h6>,
           code: ({ className, children }) => {
             const source = String(children).replace(/\n$/, "");
             return className?.includes("language-mermaid") ? (

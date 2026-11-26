@@ -2,10 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlignLeft,
   Bold,
+  BookOpen,
   Braces,
   Check,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
   Download,
   FileDown,
   FilePlus2,
@@ -39,6 +41,7 @@ import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { AssistantPanel } from "@/features/ai/assistant/AssistantPanel";
+import { GuidedTour, type GuidedTourStep } from "@/features/tour/GuidedTour";
 import { markdownWritingSkills } from "@/features/ai/assistant/writingSkills";
 import {
   generateMarkdownCompletion,
@@ -131,6 +134,7 @@ function WorkspacePage() {
   const [assistantOpen, setAssistantOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
   const [completionStatus, setCompletionStatus] = useState<"idle" | "loading" | "suggested">("idle");
   const [selectedMarkdownLength, setSelectedMarkdownLength] = useState(0);
@@ -181,6 +185,22 @@ function WorkspacePage() {
   );
   const wordCount = (activeDocument?.content.trim().match(/\S+/g) ?? []).length;
   const charCount = activeDocument?.content.length ?? 0;
+
+  const handleTourStepChange = useCallback((step: GuidedTourStep) => {
+    if (step.openAssistant) setAssistantOpen(true);
+    if (step.settingsSection) {
+      setSettingsInitialSection(step.settingsSection);
+      setSettingsOpen(true);
+    } else {
+      setSettingsOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (hydrated && window.localStorage.getItem("markdown-ai-workspace-tour-complete") !== "true") {
+      setTourOpen(true);
+    }
+  }, [hydrated]);
 
   useEffect(() => {
     if (!pendingSourceJump || activeDocument?.id !== pendingSourceJump.documentId) return;
@@ -441,6 +461,7 @@ function WorkspacePage() {
       updateState((current) => ({ ...current, documents: [...current.documents, copy] }));
       toast.success(`Created ${copy.title}`);
     }
+    if (action.type === "export-document") exportDocument(action.document);
     if (action.type === "delete-document") {
       setWorkspaceModal({ type: "delete-document", document: action.document });
     }
@@ -1000,6 +1021,7 @@ function WorkspacePage() {
   return (
     <main
       className="workspace-shell flex h-dvh min-h-[520px] flex-col overflow-hidden bg-background text-foreground"
+      data-hydrated={hydrated ? "true" : "false"}
       onDragOver={(event) => event.preventDefault()}
       onDrop={handleDrop}
     >
@@ -1024,6 +1046,7 @@ function WorkspacePage() {
           </Button>
           <button
             className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            data-tour="workspace-switcher"
             onClick={() => setWorkspaceMenuOpen((open) => !open)}
             aria-expanded={workspaceMenuOpen}
           >
@@ -1038,6 +1061,7 @@ function WorkspacePage() {
             className="ml-1 h-7 w-7 text-muted-foreground"
             title="Create workspace"
             aria-label="Create workspace"
+            data-tour="create-workspace"
             onClick={createWorkspace}
           >
             <FolderPlus />
@@ -1114,25 +1138,36 @@ function WorkspacePage() {
                 </>
               )}
             </div>
+            <div className="flex items-center gap-1" data-tour="import-export">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                title="Import Markdown file"
+                aria-label="Import Markdown file"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                title="Export workspace"
+                aria-label="Export workspace"
+                onClick={() => void exportWorkspace()}
+              >
+                <FileDown />
+              </Button>
+            </div>
             <Button
+              asChild
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-muted-foreground"
-              title="Import Markdown file"
-              aria-label="Import Markdown file"
-              onClick={() => fileInputRef.current?.click()}
+              title="Open product guide"
             >
-              <Upload />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground"
-              title="Export workspace"
-              aria-label="Export workspace"
-              onClick={() => void exportWorkspace()}
-            >
-              <FileDown />
+              <Link to="/guide" aria-label="Open product guide"><BookOpen /></Link>
             </Button>
             <Button
               variant="ghost"
@@ -1140,6 +1175,7 @@ function WorkspacePage() {
               className="h-7 w-7 text-muted-foreground"
               title="Preferences"
               aria-label="Preferences"
+              data-tour="preferences-button"
               onClick={() => {
                 setSettingsInitialSection("general");
                 setSettingsOpen(true);
@@ -1153,9 +1189,20 @@ function WorkspacePage() {
               className="h-7 w-7 text-muted-foreground"
               title={assistantOpen ? "Hide assistant panel" : "Show assistant panel"}
               aria-label={assistantOpen ? "Hide assistant panel" : "Show assistant panel"}
+              data-tour="assistant-toggle"
               onClick={() => setAssistantOpen((open) => !open)}
             >
               {assistantOpen ? <PanelRightClose /> : <PanelRightOpen />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              title="Start guided tour"
+              aria-label="Start guided tour"
+              onClick={() => setTourOpen(true)}
+            >
+              <CircleHelp />
             </Button>
           </div>
         </div>
@@ -1181,6 +1228,7 @@ function WorkspacePage() {
             <section
               className="flex h-full min-h-0 flex-col bg-background"
               aria-label="Markdown workspace editor"
+              data-tour="editor"
             >
               <div className="flex h-10 shrink-0 items-stretch border-b border-border bg-background">
                 <div className="flex min-w-0 flex-1 overflow-x-auto">
@@ -1223,7 +1271,7 @@ function WorkspacePage() {
                 </Button>
               </div>
 
-              <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-y-1 border-b border-border px-2 py-1">
+              <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-y-1 border-b border-border px-2 py-1" data-tour="writing-toolbar">
                 <div className="flex items-center gap-0.5">
                   <ToolbarButton label="Bold" onClick={() => editorRef.current?.format("**", "**")}>
                     <Bold />
@@ -1272,6 +1320,7 @@ function WorkspacePage() {
                   </ToolbarButton>
                 </div>
                 <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1" data-tour="inline-ai">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1312,6 +1361,7 @@ function WorkspacePage() {
                       {completionStatus === "suggested" ? "Suggestion ready" : "Suggest"}
                     </span>
                   </Button>
+                  </div>
                   <div className="mr-1 hidden items-center gap-0.5 border-r border-border pr-1 sm:flex">
                     {(["editor", "split", "preview"] as const).map((viewMode) => {
                       const Icon =
@@ -1494,6 +1544,14 @@ function WorkspacePage() {
         </ResizablePanelGroup>
       </div>
 
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => {
+          setTourOpen(false);
+          setSettingsOpen(false);
+        }}
+        onStepChange={handleTourStepChange}
+      />
       <input
         ref={fileInputRef}
         type="file"
@@ -1523,6 +1581,7 @@ function WorkspacePage() {
       )}
       <WorkspaceSettings
         open={settingsOpen}
+        modal={!tourOpen}
         onOpenChange={setSettingsOpen}
         preferences={state.preferences}
         onChange={setPreferences}
