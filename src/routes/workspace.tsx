@@ -40,7 +40,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { AssistantPanel } from "@/features/ai/assistant/AssistantPanel";
 import { markdownWritingSkills } from "@/features/ai/assistant/writingSkills";
-import { generateMarkdownCompletion } from "@/features/ai/assistant/completionService";
+import {
+  generateMarkdownCompletion,
+  rewriteSelectedMarkdown,
+} from "@/features/ai/assistant/completionService";
 import { syncWorkspaceDocuments } from "@/features/ai/rag/indexQueue";
 import { ProviderError } from "@/features/ai/providers/errors";
 import { openAiCompatibleProviderId } from "@/features/ai/providers/openaiCompatible";
@@ -130,6 +133,7 @@ function WorkspacePage() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
   const [completionStatus, setCompletionStatus] = useState<"idle" | "loading" | "suggested">("idle");
+  const [selectedMarkdownLength, setSelectedMarkdownLength] = useState(0);
   const [importing, setImporting] = useState(false);
   const [connectedProviders, setConnectedProviders] = useState<ConnectedProviderSummary[]>([]);
   const [activeProviderId, setActiveProviderId] = useState<string | null>(null);
@@ -1269,6 +1273,18 @@ function WorkspacePage() {
                 </div>
                 <div className="flex items-center gap-1">
                   <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-xs"
+                    title="Preview an AI rewrite of the selected Markdown; press Tab to replace it."
+                    aria-label="Rewrite selected Markdown"
+                    disabled={!canSuggestCompletion || selectedMarkdownLength === 0 || completionStatus === "loading" || mode === "preview"}
+                    onClick={() => void editorRef.current?.requestRewrite()}
+                  >
+                    <Sparkles />
+                    <span className="hidden sm:inline">Rewrite</span>
+                  </Button>
+                  <Button
                     variant={completionStatus === "suggested" ? "secondary" : "ghost"}
                     size="sm"
                     className="h-7 gap-1 px-2 text-xs"
@@ -1375,6 +1391,18 @@ function WorkspacePage() {
                             suffix,
                             signal,
                           })
+                        }
+                        onRequestRewrite={(prefix, selected, suffix, signal) =>
+                          rewriteSelectedMarkdown({
+                            model: state.preferences.aiModelId ?? "",
+                            prefix,
+                            selected,
+                            suffix,
+                            signal,
+                          })
+                        }
+                        onSelectionChange={(selectedText) =>
+                          setSelectedMarkdownLength(selectedText.length)
                         }
                         onCompletionStatusChange={setCompletionStatus}
                         onCompletionError={(error) =>

@@ -76,6 +76,7 @@ const features = [
       "Discover models, test connections, and choose a model",
       "Stream answers, keep local conversation history, and open cited sources",
       "Request cursor-aware Markdown completions; accept with Tab or dismiss with Escape",
+      "Rewrite selected Markdown with a preview before accepting the replacement",
     ],
   },
   {

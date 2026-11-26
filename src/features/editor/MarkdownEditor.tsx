@@ -6,7 +6,7 @@ import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { Decoration, EditorView, WidgetType, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 
-type CompletionSuggestion = { pos: number; text: string };
+type CompletionSuggestion = { from: number; to: number; text: string };
 const setCompletion = StateEffect.define<CompletionSuggestion>();
 const clearCompletion = StateEffect.define<void>();
 
@@ -56,9 +56,12 @@ const completionField = StateField.define<CompletionSuggestion | null>({
     EditorView.decorations.from(field, (suggestion) =>
       suggestion
         ? Decoration.set([
-            Decoration.widget({ widget: new CompletionWidget(suggestion.text), side: 1 }).range(
-              suggestion.pos,
-            ),
+            suggestion.from === suggestion.to
+              ? Decoration.widget({ widget: new CompletionWidget(suggestion.text), side: 1 }).range(suggestion.from)
+              : Decoration.replace({ widget: new CompletionWidget(suggestion.text) }).range(
+                  suggestion.from,
+                  suggestion.to,
+                ),
           ])
         : Decoration.none,
     ),
@@ -69,6 +72,7 @@ export type MarkdownEditorHandle = {
   insertText: (text: string) => void;
   jumpToHeading: (text: string, headingPath?: string[]) => void;
   requestCompletion: () => Promise<void>;
+  requestRewrite: () => Promise<void>;
   clearCompletion: () => void;
 };
 
@@ -78,58 +82,78 @@ type MarkdownEditorProps = {
   fontSize: number;
   wordWrap: boolean;
   onRequestCompletion?: (prefix: string, suffix: string, signal: AbortSignal) => Promise<string>;
+  onRequestRewrite?: (
+    prefix: string,
+    selected: string,
+    suffix: string,
+    signal: AbortSignal,
+  ) => Promise<string>;
+  onSelectionChange?: (selectedText: string) => void;
   onCompletionStatusChange?: (status: "idle" | "loading" | "suggested") => void;
   onCompletionError?: (error: unknown) => void;
 };
 
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
   function MarkdownEditor(
-    { value, onChange, fontSize, wordWrap, onRequestCompletion, onCompletionStatusChange, onCompletionError },
+    { value, onChange, fontSize, wordWrap, onRequestCompletion, onRequestRewrite, onSelectionChange, onCompletionStatusChange, onCompletionError },
     forwardedRef,
   ) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const changeRef = useRef(onChange);
     const completionProviderRef = useRef(onRequestCompletion);
+    const rewriteProviderRef = useRef(onRequestRewrite);
+    const selectionChangeRef = useRef(onSelectionChange);
     const completionStatusRef = useRef(onCompletionStatusChange);
     const completionErrorRef = useRef(onCompletionError);
     const completionControllerRef = useRef<AbortController | null>(null);
     changeRef.current = onChange;
     completionProviderRef.current = onRequestCompletion;
+    rewriteProviderRef.current = onRequestRewrite;
+    selectionChangeRef.current = onSelectionChange;
     completionStatusRef.current = onCompletionStatusChange;
     completionErrorRef.current = onCompletionError;
 
-    async function requestCompletion(view: EditorView): Promise<void> {
-      const provider = completionProviderRef.current;
+    async function requestSuggestion(view: EditorView, kind: "completion" | "rewrite"): Promise<void> {
+      const provider = kind === "completion" ? completionProviderRef.current : rewriteProviderRef.current;
       if (!provider) return;
       const selection = view.state.selection.main;
-      if (selection.from !== selection.to) {
-        completionErrorRef.current?.(new Error("Place the cursor without selecting text to get a completion."));
+      if (kind === "completion" && selection.from !== selection.to) {
+        completionErrorRef.current?.(new Error("Collapse the selection to request an inline completion."));
+        return;
+      }
+      if (kind === "rewrite" && selection.from === selection.to) {
+        completionErrorRef.current?.(new Error("Select some Markdown text to rewrite it."));
         return;
       }
       completionControllerRef.current?.abort();
       const controller = new AbortController();
       completionControllerRef.current = controller;
       const originalDoc = view.state.doc.toString();
-      const originalPos = selection.head;
-      const prefix = view.state.sliceDoc(Math.max(0, originalPos - 4000), originalPos);
-      const suffix = view.state.sliceDoc(originalPos, Math.min(view.state.doc.length, originalPos + 1200));
+      const from = kind === "rewrite" ? selection.from : selection.head;
+      const to = kind === "rewrite" ? selection.to : selection.head;
+      const prefix = view.state.sliceDoc(Math.max(0, from - 4000), from);
+      const selected = view.state.sliceDoc(from, to);
+      const suffix = view.state.sliceDoc(to, Math.min(view.state.doc.length, to + 1200));
       view.dispatch({ effects: clearCompletion.of(undefined) });
       completionStatusRef.current?.("loading");
       try {
-        const text = await provider(prefix, suffix, controller.signal);
+        const text =
+          kind === "completion"
+            ? await (provider as NonNullable<typeof completionProviderRef.current>)(prefix, suffix, controller.signal)
+            : await (provider as NonNullable<typeof rewriteProviderRef.current>)(prefix, selected, suffix, controller.signal);
         if (controller.signal.aborted) return;
         const currentSelection = view.state.selection.main;
         if (
           !text ||
           view.state.doc.toString() !== originalDoc ||
-          currentSelection.from !== originalPos ||
-          currentSelection.to !== originalPos
+          currentSelection.from !== selection.from ||
+          currentSelection.to !== selection.to
         ) {
           completionStatusRef.current?.("idle");
           return;
         }
-        view.dispatch({ effects: setCompletion.of({ pos: originalPos, text }) });
+        view.dispatch({ effects: setCompletion.of({ from, to, text }) });
         completionStatusRef.current?.("suggested");
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -157,7 +181,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
               {
                 key: "Mod-Shift-Space",
                 run: (editor) => {
-                  void requestCompletion(editor);
+                  void requestSuggestion(editor, "completion");
                   return true;
                 },
               },
@@ -168,8 +192,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
                   if (!suggestion) return false;
                   completionControllerRef.current?.abort();
                   editor.dispatch({
-                    changes: { from: suggestion.pos, to: suggestion.pos, insert: suggestion.text },
-                    selection: { anchor: suggestion.pos + suggestion.text.length },
+                    changes: { from: suggestion.from, to: suggestion.to, insert: suggestion.text },
+                    selection: { anchor: suggestion.from + suggestion.text.length },
                     effects: clearCompletion.of(undefined),
                     scrollIntoView: true,
                   });
@@ -211,6 +235,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
                   Boolean(completionControllerRef.current);
                 completionControllerRef.current?.abort();
                 if (hadCompletion) completionStatusRef.current?.("idle");
+                selectionChangeRef.current?.(update.state.sliceDoc(update.state.selection.main.from, update.state.selection.main.to));
               }
               if (update.docChanged) changeRef.current(update.state.doc.toString());
             }),
@@ -249,7 +274,13 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           const view = viewRef.current;
           if (!view) return Promise.resolve();
           view.focus();
-          return requestCompletion(view);
+          return requestSuggestion(view, "completion");
+        },
+        requestRewrite() {
+          const view = viewRef.current;
+          if (!view) return Promise.resolve();
+          view.focus();
+          return requestSuggestion(view, "rewrite");
         },
         clearCompletion() {
           const view = viewRef.current;
