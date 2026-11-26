@@ -8,6 +8,7 @@ import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirro
 
 export type MarkdownEditorHandle = {
   format: (prefix: string, suffix?: string) => void;
+  insertText: (text: string) => void;
   jumpToHeading: (text: string, headingPath?: string[]) => void;
 };
 
@@ -70,6 +71,17 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     useImperativeHandle(
       forwardedRef,
       () => ({
+        insertText(text) {
+          const view = viewRef.current;
+          if (!view || !text) return;
+          const { from, to } = view.state.selection.main;
+          view.dispatch({
+            changes: { from, to, insert: text },
+            selection: { anchor: from + text.length },
+            scrollIntoView: true,
+          });
+          view.focus();
+        },
         format(prefix, suffix = "") {
           const view = viewRef.current;
           if (!view) return;

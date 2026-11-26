@@ -51,6 +51,10 @@ type WorkspaceSettingsProps = {
     useRelay: boolean;
   }) => Promise<boolean>;
   onRemoveCustomProvider: (providerId: string) => Promise<void>;
+  localFolderName: string | null;
+  localFolderSupported: boolean;
+  onConnectLocalFolder: () => Promise<void>;
+  onDisconnectLocalFolder: () => Promise<void>;
 };
 
 export function WorkspaceSettings({
@@ -74,6 +78,10 @@ export function WorkspaceSettings({
   onSelectModel,
   onAddCustomProvider,
   onRemoveCustomProvider,
+  localFolderName,
+  localFolderSupported,
+  onConnectLocalFolder,
+  onDisconnectLocalFolder,
 }: WorkspaceSettingsProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
 
@@ -195,11 +203,11 @@ export function WorkspaceSettings({
               </section>
             )}
             {activeSection === "storage" && (
-              <section className="space-y-4">
+              <section className="space-y-5">
                 <div>
-                  <h3 className="text-sm font-medium">Storage & sync</h3>
+                  <h3 className="text-sm font-medium">Local storage</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Your workspace is stored on this device.
+                    Keep Markdown in this browser or connect a local folder for the MCP server to use.
                   </p>
                 </div>
                 <div className="flex items-start gap-3 border-y border-border py-4">
@@ -207,12 +215,40 @@ export function WorkspaceSettings({
                   <div>
                     <p className="text-sm font-medium">Local storage ready</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Documents are saved in this browser. Export a workspace backup to keep a
-                      portable copy.
+                      {localFolderName
+                        ? `Markdown documents are saved as files in “${localFolderName}”. MCP clients configured for that folder can read and edit them.`
+                        : "Documents are saved in this browser. Connect a folder to share Markdown files with a local MCP server, or export a workspace ZIP."}
                     </p>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">No account or cloud sync is active.</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" disabled={!localFolderSupported} onClick={() => void onConnectLocalFolder()}>
+                    {localFolderName ? "Choose or reconnect folder" : "Connect local folder"}
+                  </Button>
+                  {localFolderName && (
+                    <Button size="sm" variant="ghost" onClick={() => void onDisconnectLocalFolder()}>
+                      Use browser storage
+                    </Button>
+                  )}
+                </div>
+                {!localFolderSupported && (
+                  <p className="text-xs text-muted-foreground">
+                    Local folders require a supported browser. Browser storage remains available.
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">No account or cloud sync is used. Connecting a folder copies your browser workspaces and keeps the browser copy as a fallback.</p>
+                <p className="text-xs text-muted-foreground">
+                  Configure the separate MCP process using the{" "}
+                  <a
+                    className="text-primary underline underline-offset-2"
+                    href="https://github.com/ramaeondev/markdown-meadow-workspace/blob/main/mcp/README.md"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    MCP setup guide
+                  </a>
+                  .
+                </p>
               </section>
             )}
             {activeSection === "ai" && (

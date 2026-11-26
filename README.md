@@ -108,6 +108,13 @@ Do not hardcode mock AI responses as if they were real AI functionality. Provide
 
 This project was built with [Lovable](https://lovable.dev).
 
+## Local MCP server
+
+The optional Node MCP server lives in [`mcp/`](./mcp/README.md). It uses the
+local folder storage mode and MCP stdio; it does not use Supabase or a remote
+MCP endpoint. MCP writes are disabled by default and can be enabled in the
+client configuration.
+
 **Live app**: https://markdown-meadow-workspace.lovable.app
 
 ## Build with Lovable

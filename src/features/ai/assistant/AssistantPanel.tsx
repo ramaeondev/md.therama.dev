@@ -22,6 +22,7 @@ import { EmbeddingError } from "../embeddings/errors";
 import { retrieveWorkspaceContext } from "../rag/ragService";
 import type { RetrievalSource } from "../rag/types";
 import { streamAssistantReplyEvents } from "./chatService";
+import { promptForWritingSkill } from "./writingSkills";
 import {
   appendMessage,
   createConversationForWorkspace,
@@ -59,6 +60,7 @@ type AssistantPanelProps = {
   modelId: string | null;
   onConfigure: () => void;
   onOpenSource?: (documentId: string, headingPath: string[]) => void;
+  onInsertIntoDocument?: (content: string) => void;
 };
 
 /** Short, human label for an assistant reply's attribution. */
@@ -86,6 +88,7 @@ export function AssistantPanel({
   modelId,
   onConfigure,
   onOpenSource,
+  onInsertIntoDocument,
 }: AssistantPanelProps) {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -589,7 +592,7 @@ export function AssistantPanel({
                   variant="outline"
                   size="sm"
                   className="h-auto max-w-full whitespace-normal px-2 py-1 text-left text-[10px] font-normal leading-4"
-                  onClick={() => setValue(prompt)}
+                  onClick={() => setValue(promptForWritingSkill(prompt))}
                 >
                   {prompt}
                 </Button>
@@ -629,6 +632,21 @@ export function AssistantPanel({
                     <LoaderCircle className="h-3 w-3 animate-spin" /> Thinking…
                   </div>
                 ) : null}
+                {message.role === "assistant" &&
+                  !message.streaming &&
+                  message.status === "complete" &&
+                  message.content.trim() &&
+                  documentId &&
+                  onInsertIntoDocument && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1 h-7 px-2 text-[10px]"
+                      onClick={() => onInsertIntoDocument(message.content)}
+                    >
+                      <FilePlus2 /> Insert into document
+                    </Button>
+                  )}
                 {message.sources && message.sources.length > 0 && (
                   <div className="mt-3 space-y-1 border-t border-border pt-2" aria-label="Sources">
                     <div className="text-[9px] font-semibold uppercase text-muted-foreground">
