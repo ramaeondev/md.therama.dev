@@ -12,9 +12,10 @@ it when the MCP client needs it.
 
 ## What this MCP server lets you do
 
-Connect the folder used by Markdown AI Workspace to Claude Desktop, GitHub
-Copilot in VS Code, or Cursor. Then use that AI app to search and read your
-Markdown notes, ask questions about them, or draft new notes. If you enable
+Connect the folder used by Markdown AI Workspace to Claude Desktop, Claude
+Code, GitHub Copilot in VS Code or CLI, or Cursor. Then use that AI app to
+search and read your Markdown notes, ask questions about them, or draft new
+notes. If you enable
 write mode, the AI app can also create, update, rename documents, and create
 folders. The server does not provide an AI model; it gives your chosen AI app
 tools to work with the local Markdown folder.
@@ -39,6 +40,11 @@ the server which local folder to open. You do not install the package by hand
 or place it in your Markdown folder. Node.js 20 or later must be available to
 the app that launches it.
 
+The folder you connect in the app must contain
+`.markdown-ai-workspace.json` at its top level. The app creates this manifest
+when you connect the computer folder. `MD_WORKSPACE_ROOT` must point to that
+folder, not to a document file or to the manifest itself.
+
 ## Connect a workspace
 
 1. In Markdown AI Workspace, open **Preferences → storage → Connect local
@@ -54,8 +60,10 @@ from your computer: on macOS, in Finder hold Option and right-click the folder,
 then choose **Copy as Pathname**; on Windows, open the folder in File Explorer,
 click the address bar, and copy the path. On Linux, use your file manager's
 **Copy Location** option or the folder's properties. Paste that path as the
-`MD_WORKSPACE_ROOT` value below. A Windows path can use forward slashes, such as
-`C:/Users/YourName/Documents/Markdown`.
+`MD_WORKSPACE_ROOT` value below. On macOS, the path looks like
+`/Users/YourName/Documents/Markdown`. On Windows, it looks like
+`C:\Users\YourName\Documents\Markdown`; in a JSON file, write each backslash
+twice: `C:\\Users\\YourName\\Documents\\Markdown`.
 
 ```json
 {
@@ -64,7 +72,7 @@ click the address bar, and copy the path. On Linux, use your file manager's
       "command": "npx",
       "args": ["-y", "@ramaeon/md-workspace-mcp@latest"],
       "env": {
-        "MD_WORKSPACE_ROOT": "/absolute/path/to/your/Markdown-folder",
+        "MD_WORKSPACE_ROOT": "REPLACE_WITH_YOUR_COMPUTER_FOLDER_PATH",
         "MD_MCP_READ_ONLY": "true"
       }
     }
@@ -72,31 +80,66 @@ click the address bar, and copy the path. On Linux, use your file manager's
 }
 ```
 
+On Windows, use `cmd /c` to launch `npx`. Keep the same `env` values and change
+the command and arguments to:
+
+```json
+"command": "cmd",
+"args": ["/c", "npx", "-y", "@ramaeon/md-workspace-mcp@latest"]
+```
+
 3. Save the MCP client configuration and restart or reload its connection.
    The first launch downloads the MCP package and its runtime dependencies;
    later launches reuse the cached package. Node.js 20 or later must be
    available on the same computer as the MCP client.
 
-## Connect in Claude Desktop, VS Code, or Cursor
+## Connect in Claude Desktop, Claude Code, VS Code, Copilot CLI, or Cursor
 
-The server uses the local stdio transport supported by all three desktop apps.
-Add the same `markdown-workspace` entry to the MCP settings for each app you
-want to use. Replace `MD_WORKSPACE_ROOT` with the folder connected in the app.
-Keep the folder and the MCP client on the same computer. The package is not
-installed in the Markdown folder or globally; `npx` downloads it to npm's local
-cache and starts it when needed.
+The server uses the local stdio transport supported by these clients. Add a
+`markdown-workspace` entry to the settings for each app you want to use.
+Replace `MD_WORKSPACE_ROOT` with the folder connected in the app. Keep the
+folder and the MCP client on the same computer. The package is not installed in
+the Markdown folder or globally; `npx` downloads it to npm's local cache and
+starts it when needed.
 
 ### Claude Desktop
 
-In Claude Desktop, open **Settings → Developer → Edit Config** when that option
-is available, then add the server entry to `claude_desktop_config.json`. You can
-also open the file directly: on macOS it is at
-`~/Library/Application Support/Claude/claude_desktop_config.json`; on Windows,
-use `%APPDATA%/Claude/claude_desktop_config.json`; on Linux, use
-`$XDG_CONFIG_HOME/Claude/claude_desktop_config.json` or
-`~/.config/Claude/claude_desktop_config.json`. Save the file and fully quit and
-reopen Claude Desktop. This connects the local desktop app; Claude on the web
-uses remote connectors and cannot start this local server.
+Claude Desktop's newer settings may not show the old **Developer → Edit
+Config** menu. This npm server is not a Claude desktop extension bundle, so add
+it to `claude_desktop_config.json` using the steps for your computer. Use the
+JSON configuration above and replace `MD_WORKSPACE_ROOT` with your folder
+path.
+
+#### macOS
+
+1. Quit Claude Desktop with **⌘Q**.
+2. Open Finder, press **⌘⇧G**, enter
+   `~/Library/Application Support/Claude/`, and press Return.
+3. Open `claude_desktop_config.json`. If it does not exist, create it with
+   TextEdit. Before saving, choose **Format → Make Plain Text** and use the
+   exact `.json` filename.
+4. Add the configuration above, save the file, then reopen Claude Desktop.
+
+#### Windows
+
+1. Quit Claude Desktop.
+2. Open File Explorer, click its address bar, enter `%APPDATA%\Claude`, and
+   press Enter.
+3. Open `claude_desktop_config.json`. If it does not exist, create it with
+   Notepad. In Save As, choose **All files** and use the exact
+   `claude_desktop_config.json` filename so Windows does not add `.txt`.
+4. Add the server configuration. Use a Windows path such as
+   `C:\\Users\\YourName\\Documents\\Markdown` in the JSON file. For the
+   command and arguments, use the Windows `cmd /c npx` form shown below the
+   general config.
+   Save the file and reopen Claude Desktop.
+
+Some packaged Windows installations use a separate app data folder. If Claude
+does not load the file from `%APPDATA%\Claude`, its install type may store the
+configuration elsewhere.
+
+This connects the local desktop app; Claude on the web uses remote connectors
+and cannot start this local server.
 
 ### Cursor
 
@@ -113,12 +156,16 @@ across your workspaces on this computer:
 1. Open the Command Palette (`Ctrl+Shift+P` on Windows/Linux or `⌘⇧P` on Mac).
 2. Choose **Chat: Open Customizations**, then **MCP Servers → Add Server (+)**
    in the **User** section.
-3. Choose **Command (stdio)**. Enter `npx` as the command, `-y` and
-   `@ramaeon/md-workspace-mcp@latest` as the arguments, and
-   `markdown-workspace` as the server name.
+3. Choose **Command (stdio)** and enter `markdown-workspace` as the server
+   name. On macOS, use `npx` as the command, with `-y` and
+   `@ramaeon/md-workspace-mcp@latest` as arguments. On Windows, use `cmd` as the
+   command, with `/c`, `npx`, `-y`, and `@ramaeon/md-workspace-mcp@latest` as
+   arguments.
 4. Save it under **Global → Copilot Global**. In the server configuration, add
-   the `env` settings below to the `markdown-workspace` entry. Replace the
-   example path with the folder you connected in the app.
+   the matching `env` value below to the `markdown-workspace` entry. Replace the
+   sample path with the folder you connected in the app.
+
+macOS:
 
 ```json
 "env": {
@@ -127,19 +174,86 @@ across your workspaces on this computer:
 }
 ```
 
-On Windows, a folder path looks like
-`C:/Users/YourName/Documents/Markdown`. Save the configuration and
-start or restart the server in VS Code. You can check the connection by asking
+Windows (in VS Code's environment-variable field, use one backslash):
+
+```text
+MD_WORKSPACE_ROOT=C:\Users\YourName\Documents\Markdown
+MD_MCP_READ_ONLY=true
+```
+
+Save the configuration and start or restart the server in VS Code. You can check the connection by asking
 Copilot to list the Markdown workspaces or read a document. The tools
 `list_workspaces`, `list_documents`, and `read_document` should be available.
+
+### Claude Code
+
+Run the matching command once in Terminal (macOS) or PowerShell (Windows).
+It saves the server in your user settings so it is available across projects.
+Replace the example folder path with your connected folder's path.
+
+macOS:
+
+```sh
+claude mcp add --scope user --transport stdio --env "MD_WORKSPACE_ROOT=/Users/YourName/Documents/Markdown" --env MD_MCP_READ_ONLY=true markdown-workspace -- npx -y @ramaeon/md-workspace-mcp@latest
+```
+
+Windows PowerShell:
+
+```powershell
+claude mcp add --scope user --transport stdio --env "MD_WORKSPACE_ROOT=C:\Users\YourName\Documents\Markdown" --env MD_MCP_READ_ONLY=true markdown-workspace -- cmd /c npx -y @ramaeon/md-workspace-mcp@latest
+```
+
+On Git Bash for Windows, prefix the command with `MSYS_NO_PATHCONV=1`. Check
+the connection with `claude mcp get markdown-workspace` or `/mcp` in a Claude
+Code session.
+
+### GitHub Copilot CLI
+
+Add the server to `~/.copilot/mcp-config.json` on macOS or
+`%USERPROFILE%\.copilot\mcp-config.json` on Windows. Put the entry inside the
+file's top-level `mcpServers` object and keep existing entries. Use the example
+for your computer and replace the sample folder path.
+
+macOS:
+
+```json
+"markdown-workspace": {
+  "type": "local",
+  "command": "npx",
+  "args": ["-y", "@ramaeon/md-workspace-mcp@latest"],
+  "env": {
+    "MD_WORKSPACE_ROOT": "/Users/YourName/Documents/Markdown",
+    "MD_MCP_READ_ONLY": "true"
+  },
+  "tools": ["*"]
+}
+```
+
+Windows:
+
+```json
+"markdown-workspace": {
+  "type": "local",
+  "command": "cmd",
+  "args": ["/c", "npx", "-y", "@ramaeon/md-workspace-mcp@latest"],
+  "env": {
+    "MD_WORKSPACE_ROOT": "C:\\Users\\YourName\\Documents\\Markdown",
+    "MD_MCP_READ_ONLY": "true"
+  },
+  "tools": ["*"]
+}
+```
+
+Save the file, restart Copilot CLI, then run `/mcp` and look for
+`markdown-workspace`.
 
 ## Access modes
 
 Read-only mode is the default. Keep `MD_MCP_READ_ONLY` set to `true` (or omit
 it) for listing, searching, and reading documents. To allow document and
-folder changes, set it to `false` in the MCP client configuration and restart
-the server. Write mode can create and update documents, rename documents, and
-create folders. It has no delete tools.
+folder changes, set it to `false`, `0`, or `no` in the MCP client configuration
+and restart the server. Write mode can create and update documents, rename
+documents, and create folders. It has no delete tools.
 
 Updates and renames require the content hash returned by `read_document`.
 If the file changed after it was read, the server rejects the stale operation

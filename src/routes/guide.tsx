@@ -342,6 +342,11 @@ function ProductGuidePage() {
                   server process.
                 </li>
               </ol>
+              <p className="mt-4 rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
+                The folder connected here contains <code>.markdown-ai-workspace.json</code> at its
+                top level. In the MCP settings, use the folder path itself, not the path to an
+                individual Markdown file.
+              </p>
             </article>
             <article className="rounded-2xl border border-border bg-background p-6">
               <h3 className="text-sm font-semibold">2. Use the published MCP server</h3>
@@ -371,23 +376,18 @@ function ProductGuidePage() {
           <article className="mt-5 rounded-2xl border border-border bg-background p-6">
             <h3 className="text-sm font-semibold">3. Connect it to your AI app</h3>
             <p className="mt-3 max-w-4xl text-xs leading-6 text-muted-foreground">
-              This same local MCP server works with Claude Desktop, GitHub Copilot in VS Code, and
-              Cursor. Choose the matching setup below. Keep the folder and the AI app on the same
-              computer. The steps have two parts: tell the AI app how to start the server, then give
-              it the location of your Markdown folder.
+              This same local MCP server works with Claude Desktop, Claude Code, GitHub Copilot in
+              VS Code and its CLI, and Cursor. Choose the matching setup below. Keep the folder and
+              the AI app on the same computer. The steps have two parts: tell the AI app how to
+              start the server, then give it the location of your Markdown folder.
             </p>
             <div className="mt-5 grid gap-4 lg:grid-cols-3">
               <div className="rounded-xl border border-border bg-card p-4">
                 <h4 className="text-xs font-semibold">Claude Desktop</h4>
-                <ol className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">
-                  <li>1. Open Claude Desktop settings and choose Developer → Edit Config.</li>
-                  <li>2. Copy the server entry below into the config file.</li>
-                  <li>3. Save the file, then quit and reopen Claude Desktop.</li>
-                </ol>
                 <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                  If Edit Config is not shown, open <code>claude_desktop_config.json</code> in the
-                  Claude settings folder. This connects Claude Desktop on this computer; Claude on
-                  the web uses remote connectors and cannot start this local server.
+                  Claude's current app does not show the old Developer → Edit Config menu in every
+                  version. Add the server to Claude Desktop's configuration file using the Mac or
+                  Windows steps below. Claude on the web cannot start this local server.
                 </p>
               </div>
               <div className="rounded-xl border border-border bg-card p-4">
@@ -413,6 +413,69 @@ function ProductGuidePage() {
                 </p>
               </div>
             </div>
+            <div className="mt-5 rounded-2xl border border-border bg-background p-6">
+              <h4 className="text-sm font-semibold">Claude Desktop setup by computer</h4>
+              <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                Claude Desktop does not offer the same add-server form as VS Code. For this npm
+                server, open Claude's configuration file and add the JSON example below. The current{" "}
+                <strong className="text-foreground">Manage Extensions</strong> screen is for Claude
+                desktop extensions, which are packaged differently.
+              </p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <h5 className="text-xs font-semibold">macOS</h5>
+                  <ol className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">
+                    <li>
+                      1. Quit Claude Desktop with <code>⌘Q</code>.
+                    </li>
+                    <li>
+                      2. Open Finder, press <code>⌘⇧G</code>, paste{" "}
+                      <code>~/Library/Application Support/Claude/</code>, then press Return.
+                    </li>
+                    <li>
+                      3. Open <code>claude_desktop_config.json</code>. If it is not there, create
+                      that file with TextEdit. In TextEdit, choose Format → Make Plain Text before
+                      saving it with the <code>.json</code> file extension.
+                    </li>
+                    <li>
+                      4. Paste the JSON example below, replace the folder path, then save and reopen
+                      Claude Desktop.
+                    </li>
+                  </ol>
+                </div>
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <h5 className="text-xs font-semibold">Windows</h5>
+                  <ol className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">
+                    <li>1. Quit Claude Desktop.</li>
+                    <li>
+                      2. Open File Explorer, click the address bar, enter{" "}
+                      <code>%APPDATA%\Claude</code>, then press Enter.
+                    </li>
+                    <li>
+                      3. Open <code>claude_desktop_config.json</code>. If it is not there, create it
+                      with Notepad. In Save As, choose{" "}
+                      <strong className="text-foreground">All files</strong> and use the exact file
+                      name <code>claude_desktop_config.json</code> so Windows does not add{" "}
+                      <code>.txt</code>.
+                    </li>
+                    <li>
+                      4. Paste the JSON example below. Replace the folder path with your copied
+                      path, using forward slashes, then save and reopen Claude Desktop.
+                    </li>
+                  </ol>
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                    The standard Windows config folder is shown above. Some packaged installs use a
+                    separate app data folder; if Claude does not load the configuration, its install
+                    type may use a different location.
+                  </p>
+                </div>
+              </div>
+              <p className="mt-4 text-xs leading-6 text-muted-foreground">
+                If this is the first MCP server in the file, paste the full JSON example below. If
+                the file already contains an <code>mcpServers</code> section, keep its existing
+                entries and add <code>markdown-workspace</code> inside that section.
+              </p>
+            </div>
             <div className="mt-5 rounded-xl border border-border bg-card p-5">
               <h4 className="text-xs font-semibold">Find and copy your folder path</h4>
               <p className="mt-2 max-w-4xl text-xs leading-6 text-muted-foreground">
@@ -429,9 +492,9 @@ function ProductGuidePage() {
                 </li>
                 <li>
                   <strong className="text-foreground">Windows:</strong> In File Explorer, open the
-                  connected folder, click the address bar, and copy the path shown there. Paste it
-                  between the quotes. A path looks like{" "}
-                  <code>C:/Users/YourName/Documents/Markdown</code>.
+                  connected folder, click the address bar, and copy the path shown there. A path
+                  looks like <code>C:\Users\YourName\Documents\Markdown</code>. In a JSON config,
+                  double each backslash, as shown in the Windows examples below.
                 </li>
                 <li>
                   <strong className="text-foreground">Linux:</strong> In your file manager, use Copy
@@ -440,14 +503,23 @@ function ProductGuidePage() {
               </ul>
             </div>
             <p className="mt-4 max-w-4xl text-xs leading-6 text-muted-foreground">
-              The JSON block is for Claude Desktop and Cursor. In it, <code>command</code> and{" "}
-              <code>args</code> tell the AI app how to start the server. Replace only the example
-              path after <code>MD_WORKSPACE_ROOT</code> with the path you copied. Keep{" "}
+              The first two JSON blocks are for Claude Desktop and Cursor. Copilot CLI has its own
+              examples below. In each, <code>command</code> and <code>args</code> tell the AI app
+              how to start the server. Replace only the example path after{" "}
+              <code>MD_WORKSPACE_ROOT</code> with the path you copied. Keep{" "}
               <code>MD_MCP_READ_ONLY</code> set to <code>true</code> to allow reading and searching
-              without changing files. If a settings file already contains an <code>mcpServers</code>{" "}
-              section, keep its existing entries and add <code>markdown-workspace</code> inside it.
+              without changing files. If a settings file already contains an
+              <code>mcpServers</code> section, keep its existing entries and add{" "}
+              <code>markdown-workspace</code> inside it.
             </p>
-            <CodeBlock>{`{
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-xl border border-border bg-card p-4">
+                <h4 className="text-xs font-semibold">macOS JSON configuration</h4>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Use this version for Claude Desktop and Cursor on Mac. Replace the sample path
+                  with the path you copied.
+                </p>
+                <CodeBlock>{`{
   "mcpServers": {
     "markdown-workspace": {
       "command": "npx",
@@ -459,6 +531,27 @@ function ProductGuidePage() {
     }
   }
 }`}</CodeBlock>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <h4 className="text-xs font-semibold">Windows JSON configuration</h4>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Use this version for Claude Desktop and Cursor on Windows. The <code>cmd /c</code>{" "}
+                  wrapper lets the AI app start Windows' <code>npx</code> command correctly.
+                </p>
+                <CodeBlock>{`{
+  "mcpServers": {
+    "markdown-workspace": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@ramaeon/md-workspace-mcp@latest"],
+      "env": {
+        "MD_WORKSPACE_ROOT": "C:\\\\Users\\\\YourName\\\\Documents\\\\Markdown",
+        "MD_MCP_READ_ONLY": "true"
+      }
+    }
+  }
+}`}</CodeBlock>
+              </div>
+            </div>
             <article className="mt-5 rounded-2xl border border-border bg-background p-6">
               <h4 className="text-sm font-semibold">Detailed setup: VS Code with Copilot</h4>
               <p className="mt-2 text-xs leading-6 text-muted-foreground">
@@ -472,9 +565,10 @@ function ProductGuidePage() {
                   to use, select <strong className="text-foreground">Copilot</strong>.
                 </li>
                 <li>
-                  <StepNumber number="2" /> Press <code>⌘⇧P</code> to open the Command Palette. Type
-                  and select <strong className="text-foreground">Chat: Open Customizations</strong>,
-                  then select <strong className="text-foreground">MCP Servers</strong>.
+                  <StepNumber number="2" /> Open the Command Palette with <code>⌘⇧P</code> on Mac or{" "}
+                  <code>Ctrl+Shift+P</code> on Windows. Type and select{" "}
+                  <strong className="text-foreground">Chat: Open Customizations</strong>, then
+                  select <strong className="text-foreground">MCP Servers</strong>.
                 </li>
                 <li>
                   <StepNumber number="3" /> Under <strong className="text-foreground">User</strong>,
@@ -488,14 +582,19 @@ function ProductGuidePage() {
                       Name: <code>markdown-workspace</code>
                     </li>
                     <li>
-                      Command: <code>npx</code>
+                      On Mac, command: <code>npx</code>; arguments: <code>-y</code> and{" "}
+                      <code>@ramaeon/md-workspace-mcp@latest</code>.
                     </li>
                     <li>
-                      Arguments: <code>-y</code> and <code>@ramaeon/md-workspace-mcp@latest</code>
+                      On Windows, command: <code>cmd</code>; arguments: <code>/c</code>,{" "}
+                      <code>npx</code>, <code>-y</code>, and{" "}
+                      <code>@ramaeon/md-workspace-mcp@latest</code>.
                     </li>
                     <li>
                       Add an environment variable named <code>MD_WORKSPACE_ROOT</code>; paste the
-                      folder path you copied as its value.
+                      folder path you copied as its value. On Windows, use the normal path form{" "}
+                      <code>C:\Users\YourName\Documents\Markdown</code>; this field is not JSON, so
+                      do not double the backslashes.
                     </li>
                     <li>
                       Add an environment variable named <code>MD_MCP_READ_ONLY</code> and set its
@@ -528,9 +627,65 @@ function ProductGuidePage() {
                 to run in Terminal.
               </p>
             </article>
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <article className="rounded-2xl border border-border bg-background p-6">
+                <h4 className="text-sm font-semibold">Claude Code in Terminal</h4>
+                <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                  Claude Code saves this server to your personal settings with the command below.
+                  Open Terminal on the same computer as the Markdown folder. Replace the example
+                  path, run the matching command once, then start a new Claude Code session.
+                </p>
+                <p className="mt-4 text-xs font-semibold">macOS</p>
+                <CodeBlock>{`claude mcp add --scope user --transport stdio --env "MD_WORKSPACE_ROOT=/Users/YourName/Documents/Markdown" --env MD_MCP_READ_ONLY=true markdown-workspace -- npx -y @ramaeon/md-workspace-mcp@latest`}</CodeBlock>
+                <p className="mt-4 text-xs font-semibold">Windows PowerShell</p>
+                <CodeBlock>{`claude mcp add --scope user --transport stdio --env "MD_WORKSPACE_ROOT=C:\\Users\\YourName\\Documents\\Markdown" --env MD_MCP_READ_ONLY=true markdown-workspace -- cmd /c npx -y @ramaeon/md-workspace-mcp@latest`}</CodeBlock>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  If you use Git Bash on Windows, prefix the command with{" "}
+                  <code>MSYS_NO_PATHCONV=1</code>. To check the connection, run{" "}
+                  <code>claude mcp get markdown-workspace</code> or enter <code>/mcp</code> in a
+                  Claude Code session.
+                </p>
+              </article>
+              <article className="rounded-2xl border border-border bg-background p-6">
+                <h4 className="text-sm font-semibold">GitHub Copilot CLI</h4>
+                <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                  Copilot CLI saves its personal server settings in{" "}
+                  <code>~/.copilot/mcp-config.json</code> on Mac or{" "}
+                  <code>%USERPROFILE%\.copilot\mcp-config.json</code> on Windows. Add the matching
+                  entry inside its top-level <code>mcpServers</code> section. Keep existing servers
+                  in that section.
+                </p>
+                <p className="mt-4 text-xs font-semibold">macOS entry</p>
+                <CodeBlock>{`"markdown-workspace": {
+  "type": "local",
+  "command": "npx",
+  "args": ["-y", "@ramaeon/md-workspace-mcp@latest"],
+  "env": {
+    "MD_WORKSPACE_ROOT": "/Users/YourName/Documents/Markdown",
+    "MD_MCP_READ_ONLY": "true"
+  },
+  "tools": ["*"]
+}`}</CodeBlock>
+                <p className="mt-4 text-xs font-semibold">Windows entry</p>
+                <CodeBlock>{`"markdown-workspace": {
+  "type": "local",
+  "command": "cmd",
+  "args": ["/c", "npx", "-y", "@ramaeon/md-workspace-mcp@latest"],
+  "env": {
+    "MD_WORKSPACE_ROOT": "C:\\\\Users\\\\YourName\\\\Documents\\\\Markdown",
+    "MD_MCP_READ_ONLY": "true"
+  },
+  "tools": ["*"]
+}`}</CodeBlock>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  Save the file, restart Copilot CLI, then enter <code>/mcp</code> and check for{" "}
+                  <code>markdown-workspace</code>.
+                </p>
+              </article>
+            </div>
             <p className="mt-3 text-xs leading-6 text-muted-foreground">
-              For Claude or Cursor, save the JSON configuration in the matching app. For VS Code,
-              use the walkthrough above. Each AI app keeps its own MCP connection settings.
+              Each AI app keeps its own MCP connection settings. The JSON examples are for Claude
+              Desktop, Cursor, and Copilot CLI. Use the guided setup for Copilot Chat in VS Code.
             </p>
             <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-4">
               <h4 className="text-xs font-semibold">What you can do after connecting</h4>
@@ -597,10 +752,10 @@ function ProductGuidePage() {
             <p className="mt-3 text-xs leading-6 text-muted-foreground">
               Leave <code>MD_MCP_READ_ONLY</code> set to <code>true</code> (or omit it) for list,
               search, and read access. To allow create, update, rename, and folder creation, set it
-              to <code>false</code> in your MCP client configuration, then restart the connection.
-              For updates and renames, the client must read the document first and pass the returned{" "}
-              <code>contentHash</code>; if the file changed since that read, the write is rejected
-              to prevent overwriting newer content.
+              to <code>false</code> (or <code>0</code> or <code>no</code>) in your MCP client
+              configuration, then restart the connection. For updates and renames, the client must
+              read the document first and pass the returned <code>contentHash</code>; if the file
+              changed since that read, the write is rejected to prevent overwriting newer content.
             </p>
           </article>
         </div>
