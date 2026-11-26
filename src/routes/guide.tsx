@@ -9,10 +9,13 @@ import {
   Database,
   FileText,
   FolderOpen,
+  Github,
   HardDrive,
   KeyRound,
   MessageSquareText,
   Network,
+  Package,
+  Scale,
   Search,
   ShieldCheck,
   Sparkles,
@@ -20,11 +23,13 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { MCP_PACKAGE, REPOSITORY } from "@/features/open-source/repository";
+import { SiteFooter } from "@/features/site-footer/SiteFooter";
 
 export const Route = createFileRoute("/guide")({
   head: () => ({
     meta: [
-      { title: "Product guide — Markdown AI Workspace" },
+      { title: "Documentation  — Markdown AI Workspace" },
       {
         name: "description",
         content:
@@ -124,7 +129,7 @@ function ProductGuidePage() {
               width={36}
               height={36}
             />
-            <span className="text-sm font-semibold tracking-tight sm:text-base">Product guide</span>
+            <span className="text-sm font-semibold tracking-tight sm:text-base">Documentation </span>
           </Link>
           <Button asChild size="sm" className="gap-2">
             <Link to="/workspace">
@@ -161,6 +166,32 @@ function ProductGuidePage() {
             <GuideJump href="#mcp-faq">MCP FAQs</GuideJump>
             <GuideJump href="#privacy">Privacy and troubleshooting</GuideJump>
           </nav>
+          <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            <a
+              href={REPOSITORY.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 hover:text-foreground"
+            >
+              <Github className="size-3.5" aria-hidden="true" />
+              Source on GitHub
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+            <a
+              href={MCP_PACKAGE.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 hover:text-foreground"
+            >
+              <Package className="size-3.5" aria-hidden="true" />
+              {MCP_PACKAGE.name} on npm
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+            <span className="inline-flex items-center gap-1.5">
+              <Scale className="size-3.5" aria-hidden="true" />
+              {REPOSITORY.license} licensed
+            </span>
+          </div>
         </div>
       </section>
 
@@ -351,9 +382,17 @@ function ProductGuidePage() {
             <article className="rounded-2xl border border-border bg-background p-6">
               <h3 className="text-sm font-semibold">2. Use the published MCP server</h3>
               <p className="mt-3 text-xs leading-6 text-muted-foreground">
-                This is the small program that lets your AI app reach the Markdown folder. It is
-                published on npm. You do not need to download a project folder or install the
-                package yourself.
+                This is the small program that lets your AI app reach the Markdown folder. It is{" "}
+                <a
+                  href={MCP_PACKAGE.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary hover:underline"
+                >
+                  published on npm
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+                . You do not need to download a project folder or install the package yourself.
               </p>
               <p className="mt-3 text-xs leading-6 text-muted-foreground">
                 Your AI app starts it in the background when it connects. <code>npx</code> downloads
@@ -863,27 +902,33 @@ function ProductGuidePage() {
                 Open your workspace <ArrowRight />
               </Link>
             </Button>
-            <Button asChild variant="outline">
+            <Button asChild variant="outline" className="gap-2">
               <a
-                href="https://github.com/ramaeondev/md.therama.dev/blob/main/mcp/README.md"
+                href={MCP_PACKAGE.url}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
-                MCP README <ArrowRight />
+                <Package aria-hidden="true" />
+                MCP package on npm
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            </Button>
+            <Button asChild variant="outline" className="gap-2">
+              <a
+                href={REPOSITORY.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Github aria-hidden="true" />
+                View source on GitHub
+                <span className="sr-only"> (opens in a new tab)</span>
               </a>
             </Button>
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-border px-5 py-7 sm:px-8">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-          <span>Markdown AI Workspace · local-first writing</span>
-          <Link to="/about" className="inline-flex items-center gap-1.5 hover:text-foreground">
-            About the app <ArrowRight className="size-3.5" />
-          </Link>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

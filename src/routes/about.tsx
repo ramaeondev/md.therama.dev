@@ -8,9 +8,11 @@ import {
   Database,
   FileText,
   FolderTree,
+  Github,
   HardDrive,
   MessageSquareText,
   Network,
+  Package,
   PanelRight,
   PenLine,
   Search,
@@ -22,6 +24,10 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { OpenSourceBadge, StarOnGitHubButton } from "@/features/open-source/OpenSourceBadge";
+import { OpenSourceSection } from "@/features/open-source/OpenSourceSection";
+import { MCP_PACKAGE, REPOSITORY } from "@/features/open-source/repository";
+import { SiteFooter } from "@/features/site-footer/SiteFooter";
 
 const features = [
   {
@@ -167,11 +173,20 @@ export function AboutPage() {
             >
               Features
             </a>
+            <a
+              href={REPOSITORY.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:inline-flex"
+            >
+              GitHub
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
             <Link
               to="/guide"
               className="rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
-              Product guide
+              Documentation
             </Link>
             <Button asChild size="sm" className="gap-2">
               <Link to="/workspace">
@@ -189,8 +204,34 @@ export function AboutPage() {
         />
         <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-20 sm:px-8 sm:py-28 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:py-32">
           <div className="max-w-2xl">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary">
-              <ShieldCheck className="size-3.5" /> Local-first. AI optional.
+            <div className="mb-6 flex flex-wrap items-center gap-2 text-xs font-medium text-primary">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5">
+                <ShieldCheck className="size-3.5" aria-hidden="true" /> Local-first. AI optional.
+              </span>
+              <a
+                href={MCP_PACKAGE.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`${MCP_PACKAGE.name} on npm`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 transition-colors hover:border-primary/45 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Package className="size-3.5" aria-hidden="true" /> MCP compatible
+                <span className="sr-only">
+                  — {MCP_PACKAGE.name} on npm, opens in a new tab
+                </span>
+              </a>
+              <a
+                href={REPOSITORY.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`${REPOSITORY.slug} on GitHub`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 transition-colors hover:border-primary/45 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Github className="size-3.5" aria-hidden="true" /> Open source
+                <span className="sr-only">
+                  — repository on GitHub, opens in a new tab
+                </span>
+              </a>
             </div>
             <h1 className="text-4xl font-semibold leading-[1.08] tracking-[-0.04em] sm:text-6xl">
               Your notes stay <span className="text-primary">yours.</span>
@@ -206,9 +247,7 @@ export function AboutPage() {
                   Start writing <ArrowRight />
                 </Link>
               </Button>
-              <Button asChild size="lg" variant="outline">
-                <a href="#privacy">How local storage works</a>
-              </Button>
+              <StarOnGitHubButton size="lg" />
             </div>
             <div className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5"><Check className="size-3.5 text-primary" /> Works without sign-in</span>
@@ -316,6 +355,8 @@ export function AboutPage() {
         </div>
       </section>
 
+      <OpenSourceSection />
+
       <section className="px-5 py-20 sm:px-8 sm:py-24">
         <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-2 lg:items-center">
           <div>
@@ -342,14 +383,7 @@ export function AboutPage() {
         </div>
       </section>
 
-      <footer className="border-t border-border px-5 py-7 sm:px-8">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <span>Markdown AI Workspace · local-first writing</span>
-          <Link to="/workspace" className="inline-flex items-center gap-1.5 text-foreground hover:text-primary">
-            Back to your workspace <ArrowRight className="size-3.5" />
-          </Link>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

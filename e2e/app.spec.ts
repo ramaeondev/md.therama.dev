@@ -21,7 +21,7 @@ test("landing page opens the local workspace and explains the product", async ({
   await expect(page.getByRole("button", { name: "Welcome.md" }).first()).toBeVisible();
 });
 
-test("product guide documents features, local storage, providers, and MCP setup", async ({ page }) => {
+test("Documentation  documents features, local storage, providers, and MCP setup", async ({ page }) => {
   await page.goto("/guide");
   await expect(page.getByRole("heading", { name: "Features and setup guide" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Everyday writing tools" })).toBeVisible();

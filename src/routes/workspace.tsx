@@ -12,6 +12,7 @@ import {
   FileDown,
   FilePlus2,
   FolderPlus,
+  Github,
   Heading1,
   Heading2,
   Italic,
@@ -41,6 +42,7 @@ import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { AssistantPanel } from "@/features/ai/assistant/AssistantPanel";
+import { REPOSITORY } from "@/features/open-source/repository";
 import { GuidedTour, type GuidedTourStep } from "@/features/tour/GuidedTour";
 import { markdownWritingSkills } from "@/features/ai/assistant/writingSkills";
 import {
@@ -1165,9 +1167,25 @@ function WorkspacePage() {
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-muted-foreground"
-              title="Open product guide"
+              title="Open Documentation "
             >
-              <Link to="/guide" aria-label="Open product guide"><BookOpen /></Link>
+              <Link to="/guide" aria-label="Open Documentation "><BookOpen /></Link>
+            </Button>
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              title="Source code on GitHub (open source, MIT)"
+            >
+              <a
+                href={REPOSITORY.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Source code on GitHub (open source, MIT)"
+              >
+                <Github />
+              </a>
             </Button>
             <Button
               variant="ghost"
