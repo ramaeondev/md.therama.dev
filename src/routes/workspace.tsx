@@ -22,6 +22,7 @@ import {
   Quote,
   Search,
   Settings2,
+  Sparkles,
   SplitSquareHorizontal,
   Table2,
   Upload,
@@ -39,6 +40,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { AssistantPanel } from "@/features/ai/assistant/AssistantPanel";
 import { markdownWritingSkills } from "@/features/ai/assistant/writingSkills";
+import { generateMarkdownCompletion } from "@/features/ai/assistant/completionService";
 import { syncWorkspaceDocuments } from "@/features/ai/rag/indexQueue";
 import { ProviderError } from "@/features/ai/providers/errors";
 import { openAiCompatibleProviderId } from "@/features/ai/providers/openaiCompatible";
@@ -127,6 +129,7 @@ function WorkspacePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
+  const [completionStatus, setCompletionStatus] = useState<"idle" | "loading" | "suggested">("idle");
   const [importing, setImporting] = useState(false);
   const [connectedProviders, setConnectedProviders] = useState<ConnectedProviderSummary[]>([]);
   const [activeProviderId, setActiveProviderId] = useState<string | null>(null);
@@ -158,6 +161,13 @@ function WorkspacePage() {
   const folders = state.folders.filter((folder) => folder.workspaceId === state.activeWorkspaceId);
   const activeDocument =
     documents.find((document) => document.id === state.activeDocumentId) ?? documents[0] ?? null;
+  const canSuggestCompletion = Boolean(
+    activeDocument &&
+      state.preferences.aiProviderId &&
+      activeProviderId === state.preferences.aiProviderId &&
+      state.preferences.aiModelId &&
+      connectedProviders.some((entry) => entry.providerId === state.preferences.aiProviderId),
+  );
   const openDocuments = state.openDocumentIds
     .map((id) => documents.find((document) => document.id === id))
     .filter((document): document is MarkdownDocument => Boolean(document));
@@ -1258,6 +1268,34 @@ function WorkspacePage() {
                   </ToolbarButton>
                 </div>
                 <div className="flex items-center gap-1">
+                  <Button
+                    variant={completionStatus === "suggested" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-xs"
+                    title={
+                      completionStatus === "suggested"
+                        ? "Suggestion ready. Press Tab to accept or Escape to dismiss."
+                        : "Suggest Markdown at the cursor (⌘/Ctrl+Shift+Space)"
+                    }
+                    aria-label={
+                      completionStatus === "loading"
+                        ? "Generating inline suggestion"
+                        : completionStatus === "suggested"
+                          ? "Suggestion ready; press Tab to accept"
+                          : "Suggest Markdown at cursor"
+                    }
+                    disabled={!canSuggestCompletion || completionStatus === "loading" || mode === "preview"}
+                    onClick={() => void editorRef.current?.requestCompletion()}
+                  >
+                    {completionStatus === "loading" ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <Sparkles />
+                    )}
+                    <span className="hidden sm:inline">
+                      {completionStatus === "suggested" ? "Suggestion ready" : "Suggest"}
+                    </span>
+                  </Button>
                   <div className="mr-1 hidden items-center gap-0.5 border-r border-border pr-1 sm:flex">
                     {(["editor", "split", "preview"] as const).map((viewMode) => {
                       const Icon =
@@ -1330,6 +1368,18 @@ function WorkspacePage() {
                         onChange={(content) => updateDocumentContent(activeDocument.id, content)}
                         fontSize={state.preferences.fontSize}
                         wordWrap={state.preferences.wordWrap}
+                        onRequestCompletion={(prefix, suffix, signal) =>
+                          generateMarkdownCompletion({
+                            model: state.preferences.aiModelId ?? "",
+                            prefix,
+                            suffix,
+                            signal,
+                          })
+                        }
+                        onCompletionStatusChange={setCompletionStatus}
+                        onCompletionError={(error) =>
+                          toast.error(error instanceof Error ? error.message : "Could not generate a Markdown suggestion.")
+                        }
                       />
                     </div>
                   )}
