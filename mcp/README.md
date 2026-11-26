@@ -1,12 +1,43 @@
 # Markdown AI Workspace MCP server
 
 The MCP server is distributed as a standalone npm package so users do not need
-to clone the Markdown AI Workspace UI repository. The intended installation is
-`npx -y @ramaeon/md-workspace-mcp`; it runs locally over stdio and accesses only
-the folder selected by `MD_WORKSPACE_ROOT`.
+to clone the Markdown AI Workspace UI repository. MCP clients launch it with
+`npx -y @ramaeon/md-workspace-mcp@latest`; it runs locally and accesses only the
+folder selected by `MD_WORKSPACE_ROOT`. Users do not install it globally or in
+their Markdown workspace: `npx` downloads it to npm's local cache and launches
+it when the MCP client needs it.
 
-> **Release status:** Version `0.1.0` is published on npm. It has not yet been
+> **Release status:** Version `0.1.1` is published on npm. It has not yet been
 > listed in the MCP Registry.
+
+## What this MCP server lets you do
+
+Connect the folder used by Markdown AI Workspace to Claude Desktop, GitHub
+Copilot in VS Code, or Cursor. Then use that AI app to search and read your
+Markdown notes, ask questions about them, or draft new notes. If you enable
+write mode, the AI app can also create, update, rename documents, and create
+folders. The server does not provide an AI model; it gives your chosen AI app
+tools to work with the local Markdown folder.
+
+When the AI reads a document to answer you, the AI app may send that text to its
+AI provider. The MCP server itself runs on your computer and does not upload
+documents, contact the app backend, or receive the API keys stored in Markdown
+AI Workspace.
+
+## Launch command
+
+The command your AI app uses to download and start the MCP server is:
+
+```sh
+npx -y @ramaeon/md-workspace-mcp@latest
+```
+
+Think of this as the AI app's instruction for starting the local helper. Add it
+to the AI app's MCP settings below; the app then runs it in the background when
+you connect. The `MD_WORKSPACE_ROOT` setting in the same configuration tells
+the server which local folder to open. You do not install the package by hand
+or place it in your Markdown folder. Node.js 20 or later must be available to
+the app that launches it.
 
 ## Connect a workspace
 
@@ -18,25 +49,89 @@ the folder selected by `MD_WORKSPACE_ROOT`.
    `markdown-workspace` using this configuration. Update `MD_WORKSPACE_ROOT`
    to the absolute path of the folder selected in the app.
 
-   ```json
-   {
-     "mcpServers": {
-       "markdown-workspace": {
-         "command": "npx",
-         "args": ["-y", "@ramaeon/md-workspace-mcp@0.1.1"],
-         "env": {
-           "MD_WORKSPACE_ROOT": "/absolute/path/to/your/Markdown-folder",
-           "MD_MCP_READ_ONLY": "true"
-         }
-       }
-     }
-   }
-   ```
+The browser does not share a folder's full computer path with the app. Copy it
+from your computer: on macOS, in Finder hold Option and right-click the folder,
+then choose **Copy as Pathname**; on Windows, open the folder in File Explorer,
+click the address bar, and copy the path. On Linux, use your file manager's
+**Copy Location** option or the folder's properties. Paste that path as the
+`MD_WORKSPACE_ROOT` value below. A Windows path can use forward slashes, such as
+`C:/Users/YourName/Documents/Markdown`.
+
+```json
+{
+  "mcpServers": {
+    "markdown-workspace": {
+      "command": "npx",
+      "args": ["-y", "@ramaeon/md-workspace-mcp@latest"],
+      "env": {
+        "MD_WORKSPACE_ROOT": "/absolute/path/to/your/Markdown-folder",
+        "MD_MCP_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
 
 3. Save the MCP client configuration and restart or reload its connection.
    The first launch downloads the MCP package and its runtime dependencies;
-   later launches run the installed cached package. Node.js 20 or later is
-   required.
+   later launches reuse the cached package. Node.js 20 or later must be
+   available on the same computer as the MCP client.
+
+## Connect in Claude Desktop, VS Code, or Cursor
+
+The server uses the local stdio transport supported by all three desktop apps.
+Add the same `markdown-workspace` entry to the MCP settings for each app you
+want to use. Replace `MD_WORKSPACE_ROOT` with the folder connected in the app.
+Keep the folder and the MCP client on the same computer. The package is not
+installed in the Markdown folder or globally; `npx` downloads it to npm's local
+cache and starts it when needed.
+
+### Claude Desktop
+
+In Claude Desktop, open **Settings → Developer → Edit Config** when that option
+is available, then add the server entry to `claude_desktop_config.json`. You can
+also open the file directly: on macOS it is at
+`~/Library/Application Support/Claude/claude_desktop_config.json`; on Windows,
+use `%APPDATA%/Claude/claude_desktop_config.json`; on Linux, use
+`$XDG_CONFIG_HOME/Claude/claude_desktop_config.json` or
+`~/.config/Claude/claude_desktop_config.json`. Save the file and fully quit and
+reopen Claude Desktop. This connects the local desktop app; Claude on the web
+uses remote connectors and cannot start this local server.
+
+### Cursor
+
+In Cursor, open **Customize → MCPs**. Add the server to your personal
+`~/.cursor/mcp.json` settings to use it across projects. You can also add it to
+`.cursor/mcp.json` inside a project if you want the setting limited to that
+project. Save the file and restart Cursor.
+
+### GitHub Copilot in VS Code
+
+These steps add the server to your personal VS Code settings so it is available
+across your workspaces on this computer:
+
+1. Open the Command Palette (`Ctrl+Shift+P` on Windows/Linux or `⌘⇧P` on Mac).
+2. Choose **Chat: Open Customizations**, then **MCP Servers → Add Server (+)**
+   in the **User** section.
+3. Choose **Command (stdio)**. Enter `npx` as the command, `-y` and
+   `@ramaeon/md-workspace-mcp@latest` as the arguments, and
+   `markdown-workspace` as the server name.
+4. Save it under **Global → Copilot Global**. In the server configuration, add
+   the `env` settings below to the `markdown-workspace` entry. Replace the
+   example path with the folder you connected in the app.
+
+```json
+"env": {
+  "MD_WORKSPACE_ROOT": "/Users/YourName/Documents/Markdown",
+  "MD_MCP_READ_ONLY": "true"
+}
+```
+
+On Windows, a folder path looks like
+`C:/Users/YourName/Documents/Markdown`. Save the configuration and
+start or restart the server in VS Code. You can check the connection by asking
+Copilot to list the Markdown workspaces or read a document. The tools
+`list_workspaces`, `list_documents`, and `read_document` should be available.
 
 ## Access modes
 
@@ -49,6 +144,62 @@ create folders. It has no delete tools.
 Updates and renames require the content hash returned by `read_document`.
 If the file changed after it was read, the server rejects the stale operation
 so an older response cannot silently overwrite newer content.
+
+## FAQs
+
+### Do I install the server globally or in my Markdown folder?
+
+Neither. `npx` downloads it to npm's local cache and launches it when the MCP
+client connects. The MCP settings file is stored by the AI app and is separate
+from your Markdown files.
+
+### Why does the server need `MD_WORKSPACE_ROOT`?
+
+The server needs to know which computer folder to open. `MD_WORKSPACE_ROOT` is
+the setting name; its value is the full path to the folder you connected in
+Markdown AI Workspace. Add the value in your AI app's MCP settings. The browser
+does not share the computer path with the app, so copy it from Finder or File
+Explorer as described above.
+
+### How do I find my folder path?
+
+On macOS, in Finder hold Option and right-click the folder, then choose **Copy
+as Pathname**. On Windows, open the folder in File Explorer, click the address
+bar, and copy the path. On Linux, use your file manager's **Copy Location**
+option or the folder's properties. Paste the copied path as the
+`MD_WORKSPACE_ROOT` value in the client settings.
+
+### What happens when I connect it to Claude, Copilot, or Cursor?
+
+That AI app can use the server's tools to find, search, and read documents in
+the folder you connected. For example, you can ask it to find notes on a topic
+and summarize them. The AI app uses its own model and account; MCP does not
+connect the app's built-in assistant to a separate AI provider.
+
+### Are my Markdown files uploaded?
+
+The MCP process stays local and does not upload the files. When an AI app reads
+a document to answer a request, it may send the document text to that app's AI
+provider. Review the privacy settings for the AI service you use.
+
+### Does the AI get permission to edit or delete my documents?
+
+Read-only access is the default. When you set `MD_MCP_READ_ONLY` to `false`,
+the server allows creating and updating documents, renaming them, and creating
+folders. It does not provide delete tools. The AI app may also ask you before
+using a tool.
+
+### Does this work with Claude on the web or across devices?
+
+This is a local server for Claude Desktop, VS Code, or Cursor running on the
+same computer as the folder. Claude on the web needs a hosted remote server.
+This MCP package does not sync files between computers.
+
+### Can it use browser-only storage?
+
+No. The server reads a computer folder, so first connect a folder in Markdown
+AI Workspace under **Preferences → storage → Connect local folder**. Documents
+saved only in browser storage are not visible to the MCP process.
 
 ## Capabilities
 
@@ -110,16 +261,25 @@ The package name is `@ramaeon/md-workspace-mcp`, under npm user scope
 `@ramaeon`. Configure its Trusted Publisher from that npm account.
 
 After that one-time setup, publish new versions without running `npm publish`
-locally:
+locally. From the repository root, bump the package and lockfile to the next
+patch version:
 
-1. Update the version in `mcp/package.json`, `mcp/package-lock.json`, and
-   `mcp/server.json` (including its npm package entry).
-2. Commit and push those changes to the `main` branch.
-3. In GitHub, open **Actions → Publish MCP package → Run workflow**, select
-   `main`, enter the matching version, and start the workflow.
+```sh
+npm version patch --prefix mcp --no-git-tag-version
+```
+
+Then copy the new version into `mcp/src/index.ts` and both version fields in
+`mcp/server.json` (`version` and `packages[0].version`). Commit and push the
+changes to `main`, then run the workflow:
+
+1. In GitHub, open **Actions → Publish MCP package → Run workflow**.
+2. Select the `main` branch and enter the new version shown in `mcp/package.json`.
+3. Start the workflow and wait for the checks and npm publish step to succeed.
 
 The workflow runs only when manually dispatched from `main` and rejects a
-version unless all package metadata fields match. The npm registry
+version unless the input, package, lockfile, and Registry metadata all match.
+Check the package page or run `npm view @ramaeon/md-workspace-mcp version` to
+confirm the published version. The npm registry
 stores the installable package; after it is published, submit the release to
 the official MCP Registry for discovery. That registry stores metadata, not
 the npm artifact. Source and issues remain in the [Markdown AI Workspace

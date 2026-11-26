@@ -158,6 +158,7 @@ function ProductGuidePage() {
             <GuideJump href="#storage">Storage choices</GuideJump>
             <GuideJump href="#providers">AI providers</GuideJump>
             <GuideJump href="#mcp">MCP setup</GuideJump>
+            <GuideJump href="#mcp-faq">MCP FAQs</GuideJump>
             <GuideJump href="#privacy">Privacy and troubleshooting</GuideJump>
           </nav>
         </div>
@@ -322,7 +323,7 @@ function ProductGuidePage() {
 
           <div className="mt-8 grid gap-5 lg:grid-cols-2">
             <article className="rounded-2xl border border-border bg-background p-6">
-              <h3 className="text-sm font-semibold">1. Prepare a folder</h3>
+              <h3 className="text-sm font-semibold">1. Connect a local folder in the app</h3>
               <ol className="mt-4 space-y-3 text-xs leading-6 text-muted-foreground">
                 <li>
                   <StepNumber number="1" /> Open the app and choose{" "}
@@ -332,53 +333,225 @@ function ProductGuidePage() {
                   .
                 </li>
                 <li>
-                  <StepNumber number="2" /> Select an empty folder. The app copies its Markdown
-                  documents and writes the manifest.
+                  <StepNumber number="2" /> Select a folder and grant browser access. The app writes
+                  your Markdown documents and a workspace manifest there.
                 </li>
                 <li>
-                  <StepNumber number="3" /> Keep this folder on the computer where your MCP client
-                  runs. Reconnect access in the app if browser permission is later revoked.
+                  <StepNumber number="3" /> Keep the folder on the same computer as your MCP client.
+                  The app's local-folder connection is the storage setup; the MCP client starts the
+                  server process.
                 </li>
               </ol>
             </article>
             <article className="rounded-2xl border border-border bg-background p-6">
-              <h3 className="text-sm font-semibold">2. Install the standalone MCP package</h3>
+              <h3 className="text-sm font-semibold">2. Use the published MCP server</h3>
               <p className="mt-3 text-xs leading-6 text-muted-foreground">
-                After its first public npm release, install and run the server with:
+                This is the small program that lets your AI app reach the Markdown folder. It is
+                published on npm. You do not need to download a project folder or install the
+                package yourself.
               </p>
-              <CodeBlock>{"npx -y @ramaeon/md-workspace-mcp@0.1.1"}</CodeBlock>
               <p className="mt-3 text-xs leading-6 text-muted-foreground">
-                This package is being prepared; it is not published yet. Users will need Node.js 20
-                or later, but will not need to clone or install this UI repository.
+                Your AI app starts it in the background when it connects. <code>npx</code> downloads
+                the package to your computer's npm cache and starts it. Node.js 20 or later must be
+                available on the same computer.
+              </p>
+              <p className="mt-3 text-xs leading-6 text-muted-foreground">
+                This is the command your AI app will run. The server also needs the folder path,
+                which you add to the same settings in the next step.
+              </p>
+              <CodeBlock>{"npx -y @ramaeon/md-workspace-mcp@latest"}</CodeBlock>
+              <p className="mt-3 text-xs leading-6 text-muted-foreground">
+                There is no separate install step. Adding this command to your AI app's MCP settings
+                is how you connect it. The setting called <code>MD_WORKSPACE_ROOT</code> tells the
+                server which folder to open.
               </p>
             </article>
           </div>
 
           <article className="mt-5 rounded-2xl border border-border bg-background p-6">
-            <h3 className="text-sm font-semibold">3. Add the server to your MCP client</h3>
+            <h3 className="text-sm font-semibold">3. Connect it to your AI app</h3>
             <p className="mt-3 max-w-4xl text-xs leading-6 text-muted-foreground">
-              In your client’s MCP server settings, add a server named{" "}
-              <code>markdown-workspace</code>. Replace the folder path with the absolute path
-              selected in the app. The command and environment variables below apply to clients that
-              accept a standard <code>mcpServers</code> configuration.
+              This same local MCP server works with Claude Desktop, GitHub Copilot in VS Code, and
+              Cursor. Choose the matching setup below. Keep the folder and the AI app on the same
+              computer. The steps have two parts: tell the AI app how to start the server, then give
+              it the location of your Markdown folder.
+            </p>
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              <div className="rounded-xl border border-border bg-card p-4">
+                <h4 className="text-xs font-semibold">Claude Desktop</h4>
+                <ol className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">
+                  <li>1. Open Claude Desktop settings and choose Developer → Edit Config.</li>
+                  <li>2. Copy the server entry below into the config file.</li>
+                  <li>3. Save the file, then quit and reopen Claude Desktop.</li>
+                </ol>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  If Edit Config is not shown, open <code>claude_desktop_config.json</code> in the
+                  Claude settings folder. This connects Claude Desktop on this computer; Claude on
+                  the web uses remote connectors and cannot start this local server.
+                </p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <h4 className="text-xs font-semibold">GitHub Copilot in VS Code</h4>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  Follow the detailed VS Code walkthrough below. You will fill in VS Code's setup
+                  fields; you do not need to paste the JSON example into VS Code.
+                </p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <h4 className="text-xs font-semibold">Cursor</h4>
+                <ol className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">
+                  <li>1. Open Customize → MCPs in Cursor to open its MCP settings.</li>
+                  <li>
+                    2. Add the full server configuration below to the personal{" "}
+                    <code>~/.cursor/mcp.json</code> file to use it in all your Cursor projects.
+                  </li>
+                  <li>3. Save the file and restart Cursor.</li>
+                </ol>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  In Cursor, this settings file is separate from your Markdown folder. The package
+                  itself is downloaded to npm's local cache by <code>npx</code>.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 rounded-xl border border-border bg-card p-5">
+              <h4 className="text-xs font-semibold">Find and copy your folder path</h4>
+              <p className="mt-2 max-w-4xl text-xs leading-6 text-muted-foreground">
+                The browser keeps the folder's full computer path private, so the app cannot fill
+                this in for you. Copy the path from your computer and replace the example path in
+                <code>MD_WORKSPACE_ROOT</code> below.
+              </p>
+              <ul className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">
+                <li>
+                  <strong className="text-foreground">Mac:</strong> In Finder, find the folder you
+                  connected. Hold Option and right-click it, then choose{" "}
+                  <strong className="text-foreground">Copy “[folder name]” as Pathname</strong>.
+                  Paste that path between the quotes after <code>MD_WORKSPACE_ROOT</code>.
+                </li>
+                <li>
+                  <strong className="text-foreground">Windows:</strong> In File Explorer, open the
+                  connected folder, click the address bar, and copy the path shown there. Paste it
+                  between the quotes. A path looks like{" "}
+                  <code>C:/Users/YourName/Documents/Markdown</code>.
+                </li>
+                <li>
+                  <strong className="text-foreground">Linux:</strong> In your file manager, use Copy
+                  Location or open the folder's properties to copy its full path.
+                </li>
+              </ul>
+            </div>
+            <p className="mt-4 max-w-4xl text-xs leading-6 text-muted-foreground">
+              The JSON block is for Claude Desktop and Cursor. In it, <code>command</code> and{" "}
+              <code>args</code> tell the AI app how to start the server. Replace only the example
+              path after <code>MD_WORKSPACE_ROOT</code> with the path you copied. Keep{" "}
+              <code>MD_MCP_READ_ONLY</code> set to <code>true</code> to allow reading and searching
+              without changing files. If a settings file already contains an <code>mcpServers</code>{" "}
+              section, keep its existing entries and add <code>markdown-workspace</code> inside it.
             </p>
             <CodeBlock>{`{
   "mcpServers": {
     "markdown-workspace": {
       "command": "npx",
-      "args": ["-y", "@ramaeon/md-workspace-mcp@0.1.1"],
+      "args": ["-y", "@ramaeon/md-workspace-mcp@latest"],
       "env": {
-        "MD_WORKSPACE_ROOT": "/absolute/path/to/connected/Markdown-folder",
+        "MD_WORKSPACE_ROOT": "/Users/YourName/Documents/Markdown",
         "MD_MCP_READ_ONLY": "true"
       }
     }
   }
 }`}</CodeBlock>
+            <article className="mt-5 rounded-2xl border border-border bg-background p-6">
+              <h4 className="text-sm font-semibold">Detailed setup: VS Code with Copilot</h4>
+              <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                Set this up in desktop VS Code on the same computer as your Markdown folder. The
+                setup screen asks for the command and folder path separately, so you do not paste
+                the JSON example into VS Code.
+              </p>
+              <ol className="mt-4 space-y-3 text-xs leading-6 text-muted-foreground">
+                <li>
+                  <StepNumber number="1" /> Open Copilot Chat. If VS Code asks which session target
+                  to use, select <strong className="text-foreground">Copilot</strong>.
+                </li>
+                <li>
+                  <StepNumber number="2" /> Press <code>⌘⇧P</code> to open the Command Palette. Type
+                  and select <strong className="text-foreground">Chat: Open Customizations</strong>,
+                  then select <strong className="text-foreground">MCP Servers</strong>.
+                </li>
+                <li>
+                  <StepNumber number="3" /> Under <strong className="text-foreground">User</strong>,
+                  choose <strong className="text-foreground">Add Server (+)</strong>. Select{" "}
+                  <strong className="text-foreground">Command (stdio)</strong>.
+                </li>
+                <li>
+                  <StepNumber number="4" /> Fill in the server details:
+                  <ul className="ml-7 mt-2 list-disc space-y-1">
+                    <li>
+                      Name: <code>markdown-workspace</code>
+                    </li>
+                    <li>
+                      Command: <code>npx</code>
+                    </li>
+                    <li>
+                      Arguments: <code>-y</code> and <code>@ramaeon/md-workspace-mcp@latest</code>
+                    </li>
+                    <li>
+                      Add an environment variable named <code>MD_WORKSPACE_ROOT</code>; paste the
+                      folder path you copied as its value.
+                    </li>
+                    <li>
+                      Add an environment variable named <code>MD_MCP_READ_ONLY</code> and set its
+                      value to <code>true</code>.
+                    </li>
+                  </ul>
+                </li>
+                <li>
+                  <StepNumber number="5" /> Save to{" "}
+                  <strong className="text-foreground">Global → Copilot Global</strong>. If VS Code
+                  asks whether to trust or allow this local server, review the request and allow it
+                  to connect.
+                </li>
+                <li>
+                  <StepNumber number="6" /> In Copilot Chat, send the test request below. Check that
+                  Copilot shows a tool call and returns workspace or document names from your
+                  folder.
+                </li>
+              </ol>
+              <CodeBlock>
+                {
+                  "Use the markdown-workspace tools to list my Markdown workspaces and documents. Do not create or change anything."
+                }
+              </CodeBlock>
+              <p className="mt-3 text-xs leading-6 text-muted-foreground">
+                If the server is listed but no workspace appears, check that the path points to the
+                folder containing <code>.markdown-ai-workspace.json</code>. If the server does not
+                start, check the settings and make sure Node.js 20 or later is available to VS Code.
+                VS Code starts the server when Copilot uses it; there is no separate start command
+                to run in Terminal.
+              </p>
+            </article>
             <p className="mt-3 text-xs leading-6 text-muted-foreground">
-              Save the client configuration and restart or reload its MCP connection. On first
-              launch, npx downloads the published package and runtime dependencies. The local
-              process loads the chosen workspace manifest, logs to stderr, and uses stdio for MCP
-              messages.
+              For Claude or Cursor, save the JSON configuration in the matching app. For VS Code,
+              use the walkthrough above. Each AI app keeps its own MCP connection settings.
+            </p>
+            <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <h4 className="text-xs font-semibold">What you can do after connecting</h4>
+              <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                In Claude, Copilot, or Cursor, ask things like “Find my notes about project planning
+                and summarize the key decisions” or “Create a Markdown outline from my research
+                notes.” The AI app uses the MCP tools to search and read the folder you connected.
+                If you enable write mode, it can also create or update Markdown files. It uses that
+                AI app's model and account; this does not connect the app's built-in assistant to
+                the MCP server.
+              </p>
+              <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                The MCP process stays on your computer, but when an AI reads a document to answer
+                you, that text may be sent to the AI provider you chose, under that provider's
+                privacy terms. The MCP server itself does not send documents to a server or use your
+                provider API key.
+              </p>
+            </div>
+            <p className="mt-3 text-xs leading-6 text-muted-foreground">
+              If the tools do not appear, check that the folder path is correct and points to the
+              folder containing <code>.markdown-ai-workspace.json</code>.
             </p>
           </article>
 
@@ -430,6 +603,45 @@ function ProductGuidePage() {
               to prevent overwriting newer content.
             </p>
           </article>
+        </div>
+      </section>
+
+      <section
+        id="mcp-faq"
+        className="scroll-mt-24 border-b border-border px-5 py-14 sm:px-8 sm:py-20"
+      >
+        <div className="mx-auto max-w-6xl">
+          <SectionHeading eyebrow="MCP help" title="Frequently asked questions" />
+          <div className="mt-8 grid gap-3 md:grid-cols-2">
+            <McpFaq
+              question="Do I install the MCP server globally or in my Markdown folder?"
+              answer="Neither. The AI app runs npx with the published package name. npx downloads it to npm's local cache and starts it when the AI app connects. The MCP settings file belongs to the AI app; it is separate from your documents."
+            />
+            <McpFaq
+              question="How do I find the folder path to paste into the settings?"
+              answer="On Mac, in Finder hold Option and right-click the folder, then choose Copy as Pathname. On Windows, open the folder in File Explorer, click the address bar, and copy the path. On Linux, use Copy Location or the folder properties. Paste the copied path as the MD_WORKSPACE_ROOT value."
+            />
+            <McpFaq
+              question="What does the launch command do?"
+              answer="Your AI app runs npx -y @ramaeon/md-workspace-mcp@latest in the background when it connects. npx downloads or reuses the published package, then starts the local server. The MD_WORKSPACE_ROOT setting in the same AI app configuration tells it which folder to open. You do not need to install it yourself."
+            />
+            <McpFaq
+              question="Does connecting MCP send my documents to Claude, Copilot, or Cursor?"
+              answer="The MCP server itself runs locally and does not upload files. When the AI app reads a document to answer your request, the app may send that document text to its AI provider. Use the privacy and data controls for the AI service you chose."
+            />
+            <McpFaq
+              question="Can I use this with Claude on the web?"
+              answer="This package is a local server, so it works with Claude Desktop on the same computer. Claude on the web needs a hosted remote MCP server, which this package does not provide."
+            />
+            <McpFaq
+              question="Can the AI change or delete my files?"
+              answer="It starts in read-only mode. If you deliberately set MD_MCP_READ_ONLY to false, it can create, update, and rename Markdown documents and create folders. It has no delete tools."
+            />
+            <McpFaq
+              question="Do I need to sign in or turn on cloud sync?"
+              answer="No. MCP works with a local folder and does not use app sign-in or cloud sync. Browser-only storage cannot be reached by the MCP process; connect a computer folder in Preferences first."
+            />
+          </div>
         </div>
       </section>
 
@@ -564,6 +776,18 @@ function ToolLine({ name, description }: { name: string; description: string }) 
       <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-primary">{name}</code>
       <span className="text-muted-foreground">{description}</span>
     </li>
+  );
+}
+
+function McpFaq({ question, answer }: { question: string; answer: string }) {
+  return (
+    <details className="group rounded-xl border border-border bg-card p-4">
+      <summary className="cursor-pointer list-none text-xs font-semibold marker:hidden">
+        <span className="mr-2 text-primary">+</span>
+        {question}
+      </summary>
+      <p className="mt-3 text-xs leading-6 text-muted-foreground">{answer}</p>
+    </details>
   );
 }
 
