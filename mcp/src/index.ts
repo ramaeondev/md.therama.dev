@@ -1,6 +1,10 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
+import {
+  buildWritingSkillPrompt,
+  markdownWritingSkills,
+} from "../../src/features/ai/assistant/writingSkills.ts";
 import { isReadOnly, WorkspaceRepository } from "./repository.js";
 
 const root = process.env.MD_WORKSPACE_ROOT;
@@ -189,6 +193,25 @@ function createServer() {
       }],
     }),
   );
+
+  for (const skill of markdownWritingSkills) {
+    server.registerPrompt(
+      skill.id,
+      {
+        title: skill.label,
+        description: `${skill.instruction} Requires Markdown text as input.`,
+        argsSchema: z.object({ markdown: z.string().describe("Markdown text to work with") }),
+      },
+      ({ markdown }) => ({
+        messages: [
+          {
+            role: "user",
+            content: { type: "text", text: buildWritingSkillPrompt(skill.label, markdown) },
+          },
+        ],
+      }),
+    );
+  }
 
   return server;
 }

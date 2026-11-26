@@ -115,6 +115,7 @@ const features = [
       "Read tools and Markdown resources are available by default",
       "Document creation, updates, renames, and folders are opt-in",
       "Writes use content hashes to detect stale edits; delete tools are not included",
+      "Markdown writing prompts are shared with the in-app writing skills",
     ],
   },
 ];

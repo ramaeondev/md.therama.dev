@@ -70,6 +70,11 @@ newer edit.
 
 - `review-markdown`
 - `draft-markdown-outline`
+- `improve-clarity`
+- `continue-draft`
+- `outline-from-markdown`
+- `proofread-markdown`
+- `summarize-markdown`
 
 The MCP process can access only the root folder specified by
 `MD_WORKSPACE_ROOT`. Provider API keys stay in the browser's separate local
