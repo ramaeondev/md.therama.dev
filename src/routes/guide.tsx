@@ -59,12 +59,12 @@ const applicationFeatures = [
   {
     icon: KeyRound,
     title: "Bring your own AI provider",
-    body: "Connect OpenAI, Google Gemini, or an OpenAI-compatible endpoint using your own key. Discover models, test the connection, select a model, and disconnect the provider from Preferences at any time.",
+    body: "Connect OpenAI, Google Gemini, or an OpenAI-compatible endpoint using your own key. Discover models, test the connection, select a model, and disconnect the provider from Preferences at any time. Several providers can stay connected so you can switch between them without reloading.",
   },
   {
     icon: MessageSquareText,
     title: "Assistant and writing skills",
-    body: "Chat with context from the current document, selected documents, or the workspace. Use built-in writing skills, inspect source references, and insert an answer only when you choose. Conversation history is stored locally.",
+    body: "Chat with context from the current document or the entire workspace. Use built-in writing skills, inspect source references, and insert an answer only when you choose. Conversation history is stored locally.",
   },
   {
     icon: Sparkles,
@@ -129,7 +129,9 @@ function ProductGuidePage() {
               width={36}
               height={36}
             />
-            <span className="text-sm font-semibold tracking-tight sm:text-base">Documentation </span>
+            <span className="text-sm font-semibold tracking-tight sm:text-base">
+              Documentation{" "}
+            </span>
           </Link>
           <Button asChild size="sm" className="gap-2">
             <Link to="/workspace">
@@ -903,22 +905,14 @@ function ProductGuidePage() {
               </Link>
             </Button>
             <Button asChild variant="outline" className="gap-2">
-              <a
-                href={MCP_PACKAGE.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href={MCP_PACKAGE.url} target="_blank" rel="noopener noreferrer">
                 <Package aria-hidden="true" />
                 MCP package on npm
                 <span className="sr-only"> (opens in a new tab)</span>
               </a>
             </Button>
             <Button asChild variant="outline" className="gap-2">
-              <a
-                href={REPOSITORY.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href={REPOSITORY.url} target="_blank" rel="noopener noreferrer">
                 <Github aria-hidden="true" />
                 View source on GitHub
                 <span className="sr-only"> (opens in a new tab)</span>

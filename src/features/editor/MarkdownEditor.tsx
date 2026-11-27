@@ -2,9 +2,16 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
-import { EditorState, StateEffect, StateField } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect, StateField } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { Decoration, EditorView, WidgetType, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import {
+  Decoration,
+  EditorView,
+  WidgetType,
+  highlightActiveLine,
+  keymap,
+  lineNumbers,
+} from "@codemirror/view";
 
 type CompletionSuggestion = { from: number; to: number; text: string };
 const setCompletion = StateEffect.define<CompletionSuggestion>();
@@ -44,8 +51,7 @@ const completionField = StateField.define<CompletionSuggestion | null>({
     const selectionChanged =
       transaction.selection !== undefined &&
       !transaction.selection.eq(transaction.startState.selection);
-    let next =
-      transaction.docChanged || selectionChanged ? null : value;
+    let next = transaction.docChanged || selectionChanged ? null : value;
     for (const effect of transaction.effects) {
       if (effect.is(setCompletion)) next = effect.value;
       else if (effect.is(clearCompletion)) next = null;
@@ -57,7 +63,9 @@ const completionField = StateField.define<CompletionSuggestion | null>({
       suggestion
         ? Decoration.set([
             suggestion.from === suggestion.to
-              ? Decoration.widget({ widget: new CompletionWidget(suggestion.text), side: 1 }).range(suggestion.from)
+              ? Decoration.widget({ widget: new CompletionWidget(suggestion.text), side: 1 }).range(
+                  suggestion.from,
+                )
               : Decoration.replace({ widget: new CompletionWidget(suggestion.text) }).range(
                   suggestion.from,
                   suggestion.to,
@@ -81,6 +89,8 @@ type MarkdownEditorProps = {
   onChange: (value: string) => void;
   fontSize: number;
   wordWrap: boolean;
+  /** Drives the One Dark extension without rebuilding the view. */
+  theme: "dark" | "light";
   onRequestCompletion?: (prefix: string, suffix: string, signal: AbortSignal) => Promise<string>;
   onRequestRewrite?: (
     prefix: string,
@@ -95,7 +105,18 @@ type MarkdownEditorProps = {
 
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(
   function MarkdownEditor(
-    { value, onChange, fontSize, wordWrap, onRequestCompletion, onRequestRewrite, onSelectionChange, onCompletionStatusChange, onCompletionError },
+    {
+      value,
+      onChange,
+      fontSize,
+      wordWrap,
+      theme,
+      onRequestCompletion,
+      onRequestRewrite,
+      onSelectionChange,
+      onCompletionStatusChange,
+      onCompletionError,
+    },
     forwardedRef,
   ) {
     const hostRef = useRef<HTMLDivElement>(null);
@@ -107,6 +128,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     const completionStatusRef = useRef(onCompletionStatusChange);
     const completionErrorRef = useRef(onCompletionError);
     const completionControllerRef = useRef<AbortController | null>(null);
+    const themeCompartment = useRef(new Compartment());
+    const themeRef = useRef(theme);
+    themeRef.current = theme;
     changeRef.current = onChange;
     completionProviderRef.current = onRequestCompletion;
     rewriteProviderRef.current = onRequestRewrite;
@@ -114,12 +138,18 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     completionStatusRef.current = onCompletionStatusChange;
     completionErrorRef.current = onCompletionError;
 
-    async function requestSuggestion(view: EditorView, kind: "completion" | "rewrite"): Promise<void> {
-      const provider = kind === "completion" ? completionProviderRef.current : rewriteProviderRef.current;
+    async function requestSuggestion(
+      view: EditorView,
+      kind: "completion" | "rewrite",
+    ): Promise<void> {
+      const provider =
+        kind === "completion" ? completionProviderRef.current : rewriteProviderRef.current;
       if (!provider) return;
       const selection = view.state.selection.main;
       if (kind === "completion" && selection.from !== selection.to) {
-        completionErrorRef.current?.(new Error("Collapse the selection to request an inline completion."));
+        completionErrorRef.current?.(
+          new Error("Collapse the selection to request an inline completion."),
+        );
         return;
       }
       if (kind === "rewrite" && selection.from === selection.to) {
@@ -140,8 +170,17 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       try {
         const text =
           kind === "completion"
-            ? await (provider as NonNullable<typeof completionProviderRef.current>)(prefix, suffix, controller.signal)
-            : await (provider as NonNullable<typeof rewriteProviderRef.current>)(prefix, selected, suffix, controller.signal);
+            ? await (provider as NonNullable<typeof completionProviderRef.current>)(
+                prefix,
+                suffix,
+                controller.signal,
+              )
+            : await (provider as NonNullable<typeof rewriteProviderRef.current>)(
+                prefix,
+                selected,
+                suffix,
+                controller.signal,
+              );
         if (controller.signal.aborted) return;
         const currentSelection = view.state.selection.main;
         if (
@@ -235,7 +274,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
                   Boolean(completionControllerRef.current);
                 completionControllerRef.current?.abort();
                 if (hadCompletion) completionStatusRef.current?.("idle");
-                selectionChangeRef.current?.(update.state.sliceDoc(update.state.selection.main.from, update.state.selection.main.to));
+                selectionChangeRef.current?.(
+                  update.state.sliceDoc(
+                    update.state.selection.main.from,
+                    update.state.selection.main.to,
+                  ),
+                );
               }
               if (update.docChanged) changeRef.current(update.state.doc.toString());
             }),
@@ -248,7 +292,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
               ".cm-activeLineGutter": { backgroundColor: "transparent" },
             }),
             ...(wordWrap ? [EditorView.lineWrapping] : []),
-            ...(document.documentElement.classList.contains("dark") ? [oneDark] : []),
+            themeCompartment.current.of(themeRef.current === "dark" ? oneDark : []),
           ],
         }),
         parent: host,
@@ -260,6 +304,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         viewRef.current = null;
       };
     }, [fontSize, wordWrap]);
+
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        effects: themeCompartment.current.reconfigure(theme === "dark" ? oneDark : []),
+      });
+    }, [theme]);
 
     useEffect(() => {
       const view = viewRef.current;

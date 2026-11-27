@@ -186,8 +186,9 @@ has a 36 % minimum) containing the workspace tree.
 
 CodeMirror 6 with a markdown language mode, line numbers, active-line highlighting,
 undo/redo history, the standard keymaps plus `indentWithTab`, configurable font size, and
-optional line wrapping. The One Dark theme is applied when the document root carries the
-`dark` class.
+optional line wrapping. The One Dark theme follows the `theme` preference and is swapped
+through a CodeMirror `Compartment`, so toggling appearance re-themes the live view without
+discarding undo history or cursor position.
 
 `src/features/editor/MarkdownEditor.tsx`
 
@@ -704,9 +705,8 @@ what prevents an abort racing a failure from recording the same request twice.
   them. `usageSource` is `provider_reported`, `estimated`, or `unavailable`.
 - `normalizeUsage()` drops negative or non-finite values, rounds fractions, and derives a
   total from input plus output only when both are present.
-- No estimate is ever written into a provider-reported record.
-  `src/features/ai/usage/estimate.ts` provides a labelled heuristic (about 4 characters per
-  token) that is **not currently called at runtime**.
+- No estimate is ever written into a provider-reported record. `usageSource` can only be
+  `provider_reported` or `unavailable` in practice; nothing in the app produces `estimated`.
 
 ### Dashboard
 
@@ -1003,14 +1003,9 @@ typecheck, and Playwright.
 
 Behaviour that is easy to misread from the code or from older docs:
 
-- **`src/features/ai/usage/estimate.ts` is unused at runtime.** It is exported and tested but
-  never imported by production code, so no estimated token count reaches storage.
 - **The `ai-usage` `timestamp` index is never populated.** `UsageRecord` has `createdAt`, not
   `timestamp`, so the index defined in `src/lib/indexedDb.ts` stays empty. Reads sort in
   memory instead.
-- **Theme changes do not restyle an already-mounted editor.** `MarkdownEditor`'s effect
-  depends on font size and wrapping only, so the One Dark extension is chosen from the theme
-  present at mount.
 - **`AI drafts` is a folder in the starter workspace, not a destination.** Nothing writes
   documents into it automatically.
 - **`README.md` describes a different reported feature set**: an Anthropic provider,
@@ -1024,20 +1019,29 @@ Behaviour that is easy to misread from the code or from older docs:
 Claims found in repository Markdown or in-app copy that the implementation does not support.
 The implementation is authoritative.
 
-| Claim and where it appears                                                                                                                                   | Actual behaviour                                                                                                                 | Evidence                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `README.md` lists Anthropic as a supported provider                                                                                                          | Only Gemini, OpenAI, and OpenAI-compatible instances                                                                             | `src/features/ai/providers/registry.ts`, built-in cards in `ProviderSettingsPanel.tsx` |
-| `README.md` says keys are stored "securely in local storage"                                                                                                 | Keys are stored in IndexedDB `app-meta`, deliberately not `localStorage`                                                         | `providerCredentialStorage.ts`                                                         |
-| `README.md` suggestion pills: "Summarize this document", "Explain this section", "Find potential issues", "Generate documentation", "Rephrase selected text" | The pills are the five writing-skill labels                                                                                      | `writingSkills.ts`, `AssistantPanel.tsx`                                               |
-| `README.md` advertises a "full-screen editing toggle"                                                                                                        | Only editor, split, and preview modes exist                                                                                      | `src/routes/workspace.tsx`, `mode`                                                     |
-| `README.md` describes an "AI-generated documents folder" fed automatically                                                                                   | `AI drafts` exists in the starter workspace but nothing writes to it                                                             | `src/features/workspace/model.ts`                                                      |
-| `README.md` names the project "Markdown Meadow Workspace" and points at a hosted URL                                                                         | Package name is `tanstack_start_ts`; the app is self-hosted via TanStack Start                                                   | `package.json`                                                                         |
-| `src/routes/guide.tsx` says the assistant can use "selected documents" as context                                                                            | Only no context, active document, or entire workspace                                                                            | `AssistantPanel.tsx` context select                                                    |
-| `src/routes/guide.tsx` implies one connected provider at a time                                                                                              | Several may be connected; one is active                                                                                          | `providerConfiguration.ts`                                                             |
-| Guided tour says appearance "is saved with this local workspace"                                                                                             | `preferences` sits on the state root, so appearance, editor, and provider selection are shared by every workspace in the browser | `src/features/workspace/model.ts`, `types.ts`                                          |
-| `docs/workspace-intelligence.md` cites a "21.1 MiB ONNX asset"                                                                                               | A build-artifact figure that cannot be confirmed from source; treat as stale                                                     | build output, not source                                                               |
-| `docs/workspace-intelligence.md` says rebuild and retry keep previous chunk data                                                                             | True of chunk rows, but the document state flips to `indexing` first, so the panel shows work in progress                        | `documentIndexer.ts`, `indexQueue.ts`                                                  |
-| `roadmap.md` marks everything complete                                                                                                                       | Milestones are implemented, but it omits the unused estimator and the unused usage index                                         | section 6 above                                                                        |
+| Claim and where it appears                                                                                                                                   | Actual behaviour                                                                                          | Evidence                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `README.md` lists Anthropic as a supported provider                                                                                                          | Only Gemini, OpenAI, and OpenAI-compatible instances                                                      | `src/features/ai/providers/registry.ts`, built-in cards in `ProviderSettingsPanel.tsx` |
+| `README.md` says keys are stored "securely in local storage"                                                                                                 | Keys are stored in IndexedDB `app-meta`, deliberately not `localStorage`                                  | `providerCredentialStorage.ts`                                                         |
+| `README.md` suggestion pills: "Summarize this document", "Explain this section", "Find potential issues", "Generate documentation", "Rephrase selected text" | The pills are the five writing-skill labels                                                               | `writingSkills.ts`, `AssistantPanel.tsx`                                               |
+| `README.md` advertises a "full-screen editing toggle"                                                                                                        | Only editor, split, and preview modes exist                                                               | `src/routes/workspace.tsx`, `mode`                                                     |
+| `README.md` describes an "AI-generated documents folder" fed automatically                                                                                   | `AI drafts` exists in the starter workspace but nothing writes to it                                      | `src/features/workspace/model.ts`                                                      |
+| `README.md` names the project "Markdown Meadow Workspace" and points at a hosted URL                                                                         | Package name is `tanstack_start_ts`; the app is self-hosted via TanStack Start                            | `package.json`                                                                         |
+| `docs/workspace-intelligence.md` cites a "21.1 MiB ONNX asset"                                                                                               | A build-artifact figure that cannot be confirmed from source; treat as stale                              | build output, not source                                                               |
+| `docs/workspace-intelligence.md` says rebuild and retry keep previous chunk data                                                                             | True of chunk rows, but the document state flips to `indexing` first, so the panel shows work in progress | `documentIndexer.ts`, `indexQueue.ts`                                                  |
+
+### Resolved in this pass
+
+These were fixed in code rather than documented as defects:
+
+| Was                                                                                 | Now                                                                                |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `src/routes/guide.tsx` said the assistant could use "selected documents" as context | Says current document or entire workspace, matching `AssistantPanel`               |
+| `src/routes/guide.tsx` implied one connected provider at a time                     | States that several providers can stay connected and be switched without reloading |
+| Guided tour said appearance "is saved with this local workspace"                    | Says preferences are shared by every workspace in the browser                      |
+| Theme changes did not restyle an already-mounted editor                             | Theme is passed to `MarkdownEditor` and applied through a `Compartment`            |
+| `src/features/ai/usage/estimate.ts` was exported and tested but never called        | Deleted, along with its test, since estimates must never reach stored usage        |
+| `roadmap.md` omits known gaps                                                       | The remaining gap is the unused `ai-usage` `timestamp` index, listed above         |
 
 ---
 

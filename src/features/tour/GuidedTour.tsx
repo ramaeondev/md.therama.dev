@@ -65,7 +65,8 @@ export const workspaceTourSteps: GuidedTourStep[] = [
   {
     target: "settings-general",
     title: "Appearance",
-    description: "Choose dark or light appearance. The setting is saved with this local workspace.",
+    description:
+      "Choose dark or light appearance. Preferences are shared by every workspace in this browser.",
     settingsSection: "general",
   },
   {
@@ -198,24 +199,48 @@ export function GuidedTour({
             <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
               Workspace tour · {index + 1} of {steps.length}
             </div>
-            <h2 id="tour-title" className="mt-2 text-base font-semibold">{step.title}</h2>
+            <h2 id="tour-title" className="mt-2 text-base font-semibold">
+              {step.title}
+            </h2>
           </div>
-          <Button variant="ghost" size="icon" className="-mr-2 -mt-2 h-8 w-8" aria-label="Close tour" onClick={finish}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="-mr-2 -mt-2 h-8 w-8"
+            aria-label="Close tour"
+            onClick={finish}
+          >
             <X />
           </Button>
         </div>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{step.description}</p>
-        {!rect && <p className="mt-2 text-xs text-muted-foreground">This control appears when its related panel is available.</p>}
+        {!rect && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            This control appears when its related panel is available.
+          </p>
+        )}
         <div className="mt-5 flex items-center justify-between">
-          <Button variant="ghost" size="sm" onClick={finish}>Skip tour</Button>
+          <Button variant="ghost" size="sm" onClick={finish}>
+            Skip tour
+          </Button>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={index === 0} onClick={() => setIndex((current) => Math.max(0, current - 1))}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={index === 0}
+              onClick={() => setIndex((current) => Math.max(0, current - 1))}
+            >
               <ArrowLeft /> Back
             </Button>
             {index === steps.length - 1 ? (
-              <Button size="sm" onClick={finish}>Finish</Button>
+              <Button size="sm" onClick={finish}>
+                Finish
+              </Button>
             ) : (
-              <Button size="sm" onClick={() => setIndex((current) => Math.min(steps.length - 1, current + 1))}>
+              <Button
+                size="sm"
+                onClick={() => setIndex((current) => Math.min(steps.length - 1, current + 1))}
+              >
                 Next <ArrowRight />
               </Button>
             )}

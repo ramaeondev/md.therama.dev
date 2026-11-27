@@ -69,7 +69,11 @@ import {
   type CustomProviderDefinition,
 } from "@/features/ai/settings/providerConfiguration";
 import type { ConnectedProviderSummary } from "@/features/ai/settings/ProviderSettingsPanel";
-import { LocalFolderConflictError, LocalFolderPermissionError, localFolderStorage } from "@/features/workspace/localFolderStorage";
+import {
+  LocalFolderConflictError,
+  LocalFolderPermissionError,
+  localFolderStorage,
+} from "@/features/workspace/localFolderStorage";
 import { MarkdownEditor, type MarkdownEditorHandle } from "@/features/editor/MarkdownEditor";
 import { getMarkdownHeadings, MarkdownPreview } from "@/features/editor/MarkdownPreview";
 import { WorkspaceExplorer, type ExplorerAction } from "@/features/workspace/WorkspaceExplorer";
@@ -138,7 +142,9 @@ function WorkspacePage() {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
-  const [completionStatus, setCompletionStatus] = useState<"idle" | "loading" | "suggested">("idle");
+  const [completionStatus, setCompletionStatus] = useState<"idle" | "loading" | "suggested">(
+    "idle",
+  );
   const [selectedMarkdownLength, setSelectedMarkdownLength] = useState(0);
   const [importing, setImporting] = useState(false);
   const [connectedProviders, setConnectedProviders] = useState<ConnectedProviderSummary[]>([]);
@@ -173,10 +179,10 @@ function WorkspacePage() {
     documents.find((document) => document.id === state.activeDocumentId) ?? documents[0] ?? null;
   const canSuggestCompletion = Boolean(
     activeDocument &&
-      state.preferences.aiProviderId &&
-      activeProviderId === state.preferences.aiProviderId &&
-      state.preferences.aiModelId &&
-      connectedProviders.some((entry) => entry.providerId === state.preferences.aiProviderId),
+    state.preferences.aiProviderId &&
+    activeProviderId === state.preferences.aiProviderId &&
+    state.preferences.aiModelId &&
+    connectedProviders.some((entry) => entry.providerId === state.preferences.aiProviderId),
   );
   const openDocuments = state.openDocumentIds
     .map((id) => documents.find((document) => document.id === id))
@@ -238,29 +244,29 @@ function WorkspacePage() {
       }
       const stored = await indexedDbStorage.load();
       if (cancelled) return;
-        if (stored) {
-          const migrated: WorkspaceState = {
-            ...stored,
-            workspaces: stored.workspaces?.length
-              ? stored.workspaces
-              : createStarterState().workspaces,
-            folders: stored.folders ?? [],
-            documents: stored.documents ?? [],
-            openDocumentIds: stored.openDocumentIds ?? [],
-            recentDocumentIds: stored.recentDocumentIds ?? [],
-            preferences: { ...createStarterState().preferences, ...stored.preferences },
-          };
-          const activeExists = migrated.workspaces.some(
-            (workspace) => workspace.id === migrated.activeWorkspaceId,
-          );
-          setState({
-            ...migrated,
-            activeWorkspaceId: activeExists
-              ? migrated.activeWorkspaceId
-              : (migrated.workspaces[0]?.id ?? createStarterState().activeWorkspaceId),
-          });
-        }
-        setHydrated(true);
+      if (stored) {
+        const migrated: WorkspaceState = {
+          ...stored,
+          workspaces: stored.workspaces?.length
+            ? stored.workspaces
+            : createStarterState().workspaces,
+          folders: stored.folders ?? [],
+          documents: stored.documents ?? [],
+          openDocumentIds: stored.openDocumentIds ?? [],
+          recentDocumentIds: stored.recentDocumentIds ?? [],
+          preferences: { ...createStarterState().preferences, ...stored.preferences },
+        };
+        const activeExists = migrated.workspaces.some(
+          (workspace) => workspace.id === migrated.activeWorkspaceId,
+        );
+        setState({
+          ...migrated,
+          activeWorkspaceId: activeExists
+            ? migrated.activeWorkspaceId
+            : (migrated.workspaces[0]?.id ?? createStarterState().activeWorkspaceId),
+        });
+      }
+      setHydrated(true);
     })().catch(() => {
       if (!cancelled) {
         setHydrated(true);
@@ -1169,7 +1175,9 @@ function WorkspacePage() {
               className="h-7 w-7 text-muted-foreground"
               title="Open Documentation "
             >
-              <Link to="/guide" aria-label="Open Documentation "><BookOpen /></Link>
+              <Link to="/guide" aria-label="Open Documentation ">
+                <BookOpen />
+              </Link>
             </Button>
             <Button
               asChild
@@ -1289,7 +1297,10 @@ function WorkspacePage() {
                 </Button>
               </div>
 
-              <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-y-1 border-b border-border px-2 py-1" data-tour="writing-toolbar">
+              <div
+                className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-y-1 border-b border-border px-2 py-1"
+                data-tour="writing-toolbar"
+              >
                 <div className="flex items-center gap-0.5">
                   <ToolbarButton label="Bold" onClick={() => editorRef.current?.format("**", "**")}>
                     <Bold />
@@ -1339,46 +1350,55 @@ function WorkspacePage() {
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="flex items-center gap-1" data-tour="inline-ai">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1 px-2 text-xs"
-                    title="Preview an AI rewrite of the selected Markdown; press Tab to replace it."
-                    aria-label="Rewrite selected Markdown"
-                    disabled={!canSuggestCompletion || selectedMarkdownLength === 0 || completionStatus === "loading" || mode === "preview"}
-                    onClick={() => void editorRef.current?.requestRewrite()}
-                  >
-                    <Sparkles />
-                    <span className="hidden sm:inline">Rewrite</span>
-                  </Button>
-                  <Button
-                    variant={completionStatus === "suggested" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-7 gap-1 px-2 text-xs"
-                    title={
-                      completionStatus === "suggested"
-                        ? "Suggestion ready. Press Tab to accept or Escape to dismiss."
-                        : "Suggest Markdown at the cursor (⌘/Ctrl+Shift+Space)"
-                    }
-                    aria-label={
-                      completionStatus === "loading"
-                        ? "Generating inline suggestion"
-                        : completionStatus === "suggested"
-                          ? "Suggestion ready; press Tab to accept"
-                          : "Suggest Markdown at cursor"
-                    }
-                    disabled={!canSuggestCompletion || completionStatus === "loading" || mode === "preview"}
-                    onClick={() => void editorRef.current?.requestCompletion()}
-                  >
-                    {completionStatus === "loading" ? (
-                      <LoaderCircle className="animate-spin" />
-                    ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1 px-2 text-xs"
+                      title="Preview an AI rewrite of the selected Markdown; press Tab to replace it."
+                      aria-label="Rewrite selected Markdown"
+                      disabled={
+                        !canSuggestCompletion ||
+                        selectedMarkdownLength === 0 ||
+                        completionStatus === "loading" ||
+                        mode === "preview"
+                      }
+                      onClick={() => void editorRef.current?.requestRewrite()}
+                    >
                       <Sparkles />
-                    )}
-                    <span className="hidden sm:inline">
-                      {completionStatus === "suggested" ? "Suggestion ready" : "Suggest"}
-                    </span>
-                  </Button>
+                      <span className="hidden sm:inline">Rewrite</span>
+                    </Button>
+                    <Button
+                      variant={completionStatus === "suggested" ? "secondary" : "ghost"}
+                      size="sm"
+                      className="h-7 gap-1 px-2 text-xs"
+                      title={
+                        completionStatus === "suggested"
+                          ? "Suggestion ready. Press Tab to accept or Escape to dismiss."
+                          : "Suggest Markdown at the cursor (⌘/Ctrl+Shift+Space)"
+                      }
+                      aria-label={
+                        completionStatus === "loading"
+                          ? "Generating inline suggestion"
+                          : completionStatus === "suggested"
+                            ? "Suggestion ready; press Tab to accept"
+                            : "Suggest Markdown at cursor"
+                      }
+                      disabled={
+                        !canSuggestCompletion ||
+                        completionStatus === "loading" ||
+                        mode === "preview"
+                      }
+                      onClick={() => void editorRef.current?.requestCompletion()}
+                    >
+                      {completionStatus === "loading" ? (
+                        <LoaderCircle className="animate-spin" />
+                      ) : (
+                        <Sparkles />
+                      )}
+                      <span className="hidden sm:inline">
+                        {completionStatus === "suggested" ? "Suggestion ready" : "Suggest"}
+                      </span>
+                    </Button>
                   </div>
                   <div className="mr-1 hidden items-center gap-0.5 border-r border-border pr-1 sm:flex">
                     {(["editor", "split", "preview"] as const).map((viewMode) => {
@@ -1452,6 +1472,7 @@ function WorkspacePage() {
                         onChange={(content) => updateDocumentContent(activeDocument.id, content)}
                         fontSize={state.preferences.fontSize}
                         wordWrap={state.preferences.wordWrap}
+                        theme={state.preferences.theme}
                         onRequestCompletion={(prefix, suffix, signal) =>
                           generateMarkdownCompletion({
                             model: state.preferences.aiModelId ?? "",
@@ -1474,7 +1495,11 @@ function WorkspacePage() {
                         }
                         onCompletionStatusChange={setCompletionStatus}
                         onCompletionError={(error) =>
-                          toast.error(error instanceof Error ? error.message : "Could not generate a Markdown suggestion.")
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : "Could not generate a Markdown suggestion.",
+                          )
                         }
                       />
                     </div>
