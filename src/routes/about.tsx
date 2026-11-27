@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { OpenSourceBadge, StarOnGitHubButton } from "@/features/open-source/OpenSourceBadge";
+import { StarOnGitHubButton } from "@/features/open-source/OpenSourceBadge";
 import { OpenSourceSection } from "@/features/open-source/OpenSourceSection";
 import { MCP_PACKAGE, REPOSITORY } from "@/features/open-source/repository";
 import { SiteFooter } from "@/features/site-footer/SiteFooter";

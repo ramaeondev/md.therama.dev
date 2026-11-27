@@ -1,143 +1,123 @@
-# Markdown Meadow Workspace
+# Markdown AI Workspace
 
-> **Note:** This file is the original build brief and no longer matches the shipped
-> application (it lists providers, storage behaviour, and UI controls that do not
-> exist). For an accurate, source-derived description of every feature, see
-> [`docs/features.md`](docs/features.md), which also records each specific
-> discrepancy under "Documentation drift".
+A local-first Markdown workspace that runs entirely in the browser. Notes live in
+IndexedDB or in a folder on your own disk; AI is optional and uses a key you supply.
 
-Build: Markdown AI Workspace – Foundation
+No account, no backend database, no cloud sync.
 
-Build a modern, premium, developer-focused web application called Markdown AI Workspace.
+- **Workspaces, folders, documents** — nested trees, tabs, autosave, search, recents.
+- **Markdown editing** — CodeMirror 6 with editor/split/preview, formatting toolbar,
+  outline, Mermaid diagrams, word and character counts.
+- **Inline AI** — cursor-aware completions and selected-text rewrites, accepted with Tab.
+- **Assistant** — streaming chat with no context, the active document, or the whole
+  workspace via a local semantic index; insert replies into the document on demand.
+- **Bring your own key** — Google Gemini, OpenAI, or any OpenAI-compatible endpoint,
+  including local runtimes. Several can stay connected at once.
+- **Two storage modes** — browser IndexedDB (default) or a real folder on disk via the
+  File System Access API, with conflict detection against external edits.
+- **MCP server** — an optional stdio process that exposes a connected folder to desktop
+  AI clients as tools, resources, and prompts. Read-only by default.
 
-Product Vision
-An AI-powered knowledge workspace built around Markdown. Users can manage Markdown documents, organize workspaces, edit and preview content, and eventually interact with their entire documentation using configurable AI providers.
+Full feature reference: **[`docs/features.md`](docs/features.md)** — source-derived, with a
+path as evidence for every claim and a section recording where older docs disagreed with
+the code.
 
-The application must be designed around three principles:
-1. Markdown files are the primary source of truth.
-2. Users own and control their documents.
-3. AI providers and models must be interchangeable through a provider-independent architecture.
+## Getting started
 
-Technology
-- React
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- CodeMirror 6 for Markdown editing
-- React Markdown for rendering
-- IndexedDB for local persistence (e.g. Dexie.js or native IndexedDB wrapper)
-Use clean, reusable components and a modular feature-based architecture.
-
-Application Layout
-Create a three-panel desktop application:
-1. Left Sidebar – Workspace Explorer
-- Workspace switcher
-- Create workspace
-- Create Markdown file
-- Create folders
-- Nested file explorer with expand/collapse
-- Rename, delete, and duplicate files
-- Search files
-- Recently opened documents
-- AI-generated documents folder
-
-2. Center – Markdown Editor
-- Tab-based document navigation
-- CodeMirror Markdown editor
-- Live preview
-- Split editor and preview
-- Full-screen editing toggle
-- Markdown formatting toolbar (bold, italic, headings, lists, quotes, tables, code)
-- Heading navigation / Outline view
-- Syntax highlighting
-- Mermaid code block support
-- Autosave indicator
-- Word count and character count
-- Provide three viewing modes: Editor only, Preview only, and Split view
-
-3. Right Sidebar – AI Assistant
-Build the complete visual interface, but do not connect AI APIs yet.
-Include:
-- Conversation interface with clean message feed
-- Message input
-- Conversation history
-- New conversation button
-- Document context selector (attach current document or workspace)
-- Workspace context selector
-- Selected AI provider/model display pill/badge
-- Suggested prompt pills:
-  * Summarize this document
-  * Explain this section
-  * Find potential issues
-  * Generate documentation
-  * Rephrase selected text
-- Make the interface structured and ready for future streaming AI responses
-
-Settings Modal / View
-Create a settings area with sections for:
-- General preferences (theme, auto-save delay)
-- Editor preferences (font size, line wrapping, tab size)
-- AI providers (Gemini, OpenAI, Anthropic, OpenRouter, Ollama, custom OpenAI-compatible endpoint)
-- AI model selection
-- Storage and synchronization status
-Design the AI provider settings to accept API keys and endpoints securely in local storage.
-
-Design Direction
-- Professional, minimal, modern developer-tool aesthetic (inspired by Obsidian and modern IDEs).
-- Dark theme as default (with clean light theme support).
-- Neutral dark backgrounds, subtle borders, crisp typography.
-- Compact navigation and resizable panels.
-- Keyboard-friendly interactions.
-- Avoid making the interface look like a generic AI chatbot; Markdown editor is the central focus with AI as an integrated side assistant.
-
-Functional Requirements
-Implement real functionality for:
-- Creating and switching workspaces.
-- Creating and editing Markdown files.
-- Creating nested folders.
-- Opening multiple documents in tabs.
-- Live Markdown preview and synchronized split view.
-- Local persistence using IndexedDB (persisting workspaces, folders, documents, and active tab states across browser reloads).
-- Importing Markdown files (.md, .markdown, .txt) via file picker and drag-and-drop.
-- Exporting Markdown files and exporting the workspace.
-- Basic document search.
-- Autosaving document changes with visual indicator.
-
-Architecture Requirements
-Maintain modular boundaries:
-- Workspace management
-- Document management
-- Markdown editor & preview
-- Local persistence adapter (DocumentStorageAdapter decoupled from UI)
-- AI assistant UI and provider configuration interfaces (AIProvider decoupled from React components)
-Do not hardcode mock AI responses as if they were real AI functionality. Provide pre-seeded sample workspace with starter markdown documentation to showcase the editor immediately.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Local MCP server
-
-The optional Node MCP server lives in [`mcp/`](./mcp/README.md). It uses the
-local folder storage mode and MCP stdio; it does not use Supabase or a remote
-MCP endpoint. MCP writes are disabled by default and can be enabled in the
-client configuration.
-
-**Live app**: https://markdown-meadow-workspace.lovable.app
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/9eb14dfb-e6fe-45de-916b-8c7815e64281).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Requires Node.js 20 or newer.
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+git clone https://github.com/ramaeondev/md.therama.dev.git
+cd md.therama.dev
+npm install
 npm run dev
 ```
+
+Open the printed URL and choose **Open workspace**. A starter workspace with sample
+documents is created on first run. No configuration is needed unless you want AI.
+
+## Optional setup
+
+**AI providers.** Open **Preferences → AI providers**, choose Gemini, OpenAI, or add an
+OpenAI-compatible endpoint, then paste your own API key. The key is validated and the
+model list is fetched before the provider becomes active. Keys are stored in IndexedDB
+under `app-meta`, never in workspace state, exports, or logs.
+
+**Computer-folder storage.** **Preferences → storage → Connect local folder**. The app
+writes plain `.md` files plus a `.markdown-ai-workspace.json` manifest. Requires a
+Chromium-based desktop browser.
+
+**Workspace intelligence.** **Preferences → Workspace AI → Index workspace** downloads a
+small local embedding model once and indexes your documents for meaning-based retrieval.
+Runs in a Web Worker; documents never leave the browser for indexing.
+
+**MCP clients.** Connect a local folder first, then point your AI client at
+`npx -y @ramaeon/md-workspace-mcp` with `MD_WORKSPACE_ROOT` set to that folder. See the
+in-app guide at `/guide` and [`mcp/README.md`](mcp/README.md).
+
+## Scripts
+
+| Command                 | What it does                                  |
+| ----------------------- | --------------------------------------------- |
+| `npm run dev`           | Vite dev server                               |
+| `npm run build`         | Production build                              |
+| `npm run preview`       | Preview the production build                  |
+| `npm run lint`          | ESLint                                        |
+| `npm run format`        | Prettier                                      |
+| `npm test`              | Vitest unit and component tests               |
+| `npm run test:e2e`      | Playwright end-to-end tests                   |
+| `npm run test:mcp`      | MCP server tests                              |
+| `npm run typecheck:e2e` | Type-check the Playwright suite               |
+| `npm run test:all`      | Unit, MCP, e2e type-check, and e2e in one run |
+
+## Architecture
+
+Persistence, workspace state, Markdown editing, and presentation are separate feature
+modules so they can evolve independently.
+
+```
+src/
+  features/
+    workspace/    types, state model, DocumentStorageAdapter (IndexedDB + local folder)
+    editor/       CodeMirror editor and Markdown preview
+    ai/
+      providers/  provider contracts, registry, adapters, shared transport
+      settings/   sessions, credential storage, custom provider definitions
+      assistant/  chat transport, conversation store, writing skills
+      embeddings/ local embedding model behind a worker
+      rag/        chunking, indexing queue, retrieval, context building
+      usage/      usage lifecycle, storage, dashboard
+      server/     the opt-in compatible-provider relay
+    tour/         guided tour
+    open-source/  canonical repository and package metadata
+  lib/            single owner of the IndexedDB connection
+  routes/         /, /about, /guide, /workspace
+mcp/              standalone stdio MCP server (own package)
+```
+
+Constraints worth knowing before changing things:
+
+- One module owns the IndexedDB connection and its version history
+  (`src/lib/indexedDb.ts`). Migrations are additive; no store is ever dropped or re-keyed.
+- Provider keys live only in `providerCredentialStorage`. Adapters keep them in closures;
+  they never enter workspace state or an adapter's own persistence.
+- `src/features/ai/server/compatibleRelay.ts` is the only place a provider key may transit
+  the server. It forwards the caller's own credentials, stores nothing, and re-validates
+  the upstream target server-side.
+- Token counts are recorded only when a provider reports them. Unreported usage is marked
+  `unavailable` rather than estimated.
+
+## Documentation
+
+| Document                                                               | Contents                                                      |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------- |
+| [`docs/features.md`](docs/features.md)                                 | Authoritative feature reference, persistence model, drift log |
+| [`mcp/README.md`](mcp/README.md)                                       | MCP server usage and client configuration                     |
+| [`docs/ai-provider-architecture.md`](docs/ai-provider-architecture.md) | Provider adapter design                                       |
+| [`docs/workspace-intelligence.md`](docs/workspace-intelligence.md)     | Semantic index internals                                      |
+
+`docs/features.md` supersedes older documents where they conflict.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).

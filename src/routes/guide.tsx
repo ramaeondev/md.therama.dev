@@ -16,7 +16,6 @@ import {
   Network,
   Package,
   Scale,
-  Search,
   ShieldCheck,
   Sparkles,
   Workflow,

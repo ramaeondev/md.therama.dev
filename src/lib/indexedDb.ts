@@ -15,8 +15,11 @@ export const APP_DATABASE_NAME = "markdown-ai-workspace";
  * - 2: adds `conversations`, `messages`, `ai-usage`, and `app-meta`.
  *      Additive only: no existing store is dropped, re-keyed, or rewritten.
  * - 3: adds `rag-chunks` and `rag-index-meta` for browser-local workspace search.
+ * - 4: repairs the `ai-usage` ordering index. Version 2 created it on a
+ *      `timestamp` field that `UsageRecord` never had, so the index was always
+ *      empty. Version 4 drops the stale index and adds `createdAt` instead.
  */
-export const APP_DATABASE_VERSION = 3;
+export const APP_DATABASE_VERSION = 4;
 
 export const WORKSPACE_STATE_STORE = "workspace-state";
 export const CONVERSATION_STORE = "conversations";
@@ -57,7 +60,8 @@ function createMissingStores(database: IDBDatabase): void {
   }
   if (!database.objectStoreNames.contains(USAGE_STORE)) {
     const usage = database.createObjectStore(USAGE_STORE, { keyPath: "id" });
-    usage.createIndex("timestamp", "timestamp", { unique: false });
+    // `createdAt` is the only timestamp a usage record carries; see version 4.
+    usage.createIndex("createdAt", "createdAt", { unique: false });
   }
   if (!database.objectStoreNames.contains(APP_META_STORE)) {
     database.createObjectStore(APP_META_STORE, { keyPath: "key" });
@@ -71,6 +75,21 @@ function createMissingStores(database: IDBDatabase): void {
     const indexMeta = database.createObjectStore(RAG_INDEX_META_STORE, { keyPath: "id" });
     indexMeta.createIndex("workspaceId", "workspaceId", { unique: false });
     indexMeta.createIndex("workspaceDocument", ["workspaceId", "documentId"], { unique: true });
+  }
+}
+
+/**
+ * Version 4 repair: databases created at versions 2 or 3 already own the
+ * `ai-usage` store, so `createMissingStores` skips them. Drop the stale
+ * `timestamp` index and add the `createdAt` index that the records actually
+ * support. Both operations are idempotent.
+ */
+function repairUsageIndexes(transaction: IDBTransaction): void {
+  if (!transaction.db.objectStoreNames.contains(USAGE_STORE)) return;
+  const usage = transaction.objectStore(USAGE_STORE);
+  if (usage.indexNames.contains("timestamp")) usage.deleteIndex("timestamp");
+  if (!usage.indexNames.contains("createdAt")) {
+    usage.createIndex("createdAt", "createdAt", { unique: false });
   }
 }
 
@@ -94,8 +113,13 @@ function openDatabase(): Promise<IDBDatabase> {
     // here the transaction aborts, the version stays where it was, and the
     // existing stores keep their data. We never clear or delete a store during
     // a migration.
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
+      const transaction = request.transaction;
+      if (!transaction) return;
+      // Stores that do not exist yet are created at their current shape.
       createMissingStores(request.result);
+      // Repairs for stores that already existed at an older version.
+      if ((event.oldVersion ?? 0) < 4) repairUsageIndexes(transaction);
     };
 
     request.onblocked = () => {

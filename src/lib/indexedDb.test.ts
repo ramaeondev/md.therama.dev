@@ -79,6 +79,43 @@ const legacyState = {
   },
 };
 
+/** Creates a database as version 3 left it: usage store with the stale `timestamp` index. */
+function createVersionThreeDatabase(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(APP_DATABASE_NAME, 3);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      database.createObjectStore(WORKSPACE_STATE_STORE, { keyPath: "id" });
+      const usage = database.createObjectStore(USAGE_STORE, { keyPath: "id" });
+      usage.createIndex("timestamp", "timestamp", { unique: false });
+    };
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction(USAGE_STORE, "readwrite");
+      transaction.objectStore(USAGE_STORE).put({
+        id: "usage-v3",
+        requestId: "request-v3",
+        providerId: "gemini",
+        modelId: "gemini-test",
+        conversationId: null,
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+        usageSource: "provider_reported",
+        durationMs: 42,
+        status: "completed",
+        createdAt: "2026-11-20T10:00:00.000Z",
+      });
+      transaction.oncomplete = () => {
+        database.close();
+        resolve();
+      };
+      transaction.onerror = () => reject(transaction.error);
+    };
+  });
+}
+
 describe("IndexedDB versioned migration", () => {
   beforeEach(async () => {
     resetAppDatabaseConnection();
@@ -91,7 +128,7 @@ describe("IndexedDB versioned migration", () => {
     const database = await getAppDatabase();
 
     expect(database.version).toBe(APP_DATABASE_VERSION);
-    expect(APP_DATABASE_VERSION).toBe(3);
+    expect(APP_DATABASE_VERSION).toBe(4);
     for (const store of [
       CONVERSATION_STORE,
       MESSAGE_STORE,
@@ -123,7 +160,10 @@ describe("IndexedDB versioned migration", () => {
     expect(messages.indexNames.contains("conversationCreatedAt")).toBe(true);
 
     const usage = database.transaction(USAGE_STORE, "readonly").objectStore(USAGE_STORE);
-    expect(usage.indexNames.contains("timestamp")).toBe(true);
+    // `createdAt` is the field UsageRecord actually stores; the v2 `timestamp`
+    // index pointed at a property that never existed.
+    expect(usage.indexNames.contains("createdAt")).toBe(true);
+    expect(usage.indexNames.contains("timestamp")).toBe(false);
 
     const chunks = database.transaction(RAG_CHUNK_STORE, "readonly").objectStore(RAG_CHUNK_STORE);
     expect(chunks.indexNames.contains("workspaceId")).toBe(true);
@@ -133,6 +173,26 @@ describe("IndexedDB versioned migration", () => {
       .transaction(RAG_INDEX_META_STORE, "readonly")
       .objectStore(RAG_INDEX_META_STORE);
     expect(ragMeta.indexNames.contains("workspaceDocument")).toBe(true);
+  });
+
+  it("repairs the usage index when upgrading a version 3 database", async () => {
+    await createVersionThreeDatabase();
+
+    const database = await getAppDatabase();
+
+    expect(database.version).toBe(4);
+    const usage = database.transaction(USAGE_STORE, "readonly").objectStore(USAGE_STORE);
+    expect(usage.indexNames.contains("timestamp")).toBe(false);
+    expect(usage.indexNames.contains("createdAt")).toBe(true);
+
+    // The record written before the upgrade is still present and now indexed.
+    const records = await new Promise<unknown[]>((resolve, reject) => {
+      const request = usage.index("createdAt").getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    expect(records).toHaveLength(1);
+    expect((records[0] as { id: string }).id).toBe("usage-v3");
   });
 
   it("is idempotent when the database is already at the current version", async () => {

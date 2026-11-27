@@ -931,7 +931,7 @@ it, and `src/lib/lovable-error-reporting.ts` forwards runtime errors to the opti
 
 ## 3. Persistence model
 
-One IndexedDB database, `markdown-ai-workspace`, version 3, owned exclusively by
+One IndexedDB database, `markdown-ai-workspace`, version 4, owned exclusively by
 `src/lib/indexedDb.ts`. Feature modules define their own adapter interfaces on top of it.
 
 | Store             | Key   | Indexes                                             | Contents                                                                                      |
@@ -939,14 +939,16 @@ One IndexedDB database, `markdown-ai-workspace`, version 3, owned exclusively by
 | `workspace-state` | `id`  | none                                                | The whole `WorkspaceState` as one record                                                      |
 | `conversations`   | `id`  | `workspaceId`, `updatedAt`                          | Conversation metadata, title, provider and model, timestamps                                  |
 | `messages`        | `id`  | `conversationId`, `[conversationId, createdAt]`     | Messages with role, content, status, usage, sources, attribution                              |
-| `ai-usage`        | `id`  | `timestamp`                                         | Usage records                                                                                 |
+| `ai-usage`        | `id`  | `createdAt`                                         | Usage records                                                                                 |
 | `app-meta`        | `key` | none                                                | Provider credentials, custom provider definitions, local folder handle, `rag-enabled:*` flags |
 | `rag-chunks`      | `id`  | `workspaceId`, `[workspaceId, documentId]`          | Chunk text, heading path, hashes, vectors                                                     |
 | `rag-index-meta`  | `id`  | `workspaceId`, `[workspaceId, documentId]` (unique) | Per-document index state                                                                      |
 
 Version history, from the source comments: 1 is workspace state; 2 adds conversations,
-messages, usage, and app-meta; 3 adds RAG chunks and index metadata. Migrations are additive
-only, so no store is dropped, re-keyed, or rewritten.
+messages, usage, and app-meta; 3 adds RAG chunks and index metadata; 4 repairs the
+`ai-usage` index, replacing the `timestamp` index (a field `UsageRecord` never had) with
+`createdAt`. Migrations are additive except for that index repair; no store is dropped,
+re-keyed, or rewritten.
 
 Failure handling: missing `IndexedDB`, an open failure, a blocked upgrade (another tab on an
 older version), and an aborted transaction all surface as `StorageUnavailableError` with a
@@ -1003,14 +1005,8 @@ typecheck, and Playwright.
 
 Behaviour that is easy to misread from the code or from older docs:
 
-- **The `ai-usage` `timestamp` index is never populated.** `UsageRecord` has `createdAt`, not
-  `timestamp`, so the index defined in `src/lib/indexedDb.ts` stays empty. Reads sort in
-  memory instead.
 - **`AI drafts` is a folder in the starter workspace, not a destination.** Nothing writes
   documents into it automatically.
-- **`README.md` describes a different reported feature set**: an Anthropic provider,
-  localStorage credential storage, a full-screen editing toggle, and a different set of
-  suggestion pills. None of those exist in the code; see the table below.
 
 ---
 
@@ -1019,16 +1015,10 @@ Behaviour that is easy to misread from the code or from older docs:
 Claims found in repository Markdown or in-app copy that the implementation does not support.
 The implementation is authoritative.
 
-| Claim and where it appears                                                                                                                                   | Actual behaviour                                                                                          | Evidence                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `README.md` lists Anthropic as a supported provider                                                                                                          | Only Gemini, OpenAI, and OpenAI-compatible instances                                                      | `src/features/ai/providers/registry.ts`, built-in cards in `ProviderSettingsPanel.tsx` |
-| `README.md` says keys are stored "securely in local storage"                                                                                                 | Keys are stored in IndexedDB `app-meta`, deliberately not `localStorage`                                  | `providerCredentialStorage.ts`                                                         |
-| `README.md` suggestion pills: "Summarize this document", "Explain this section", "Find potential issues", "Generate documentation", "Rephrase selected text" | The pills are the five writing-skill labels                                                               | `writingSkills.ts`, `AssistantPanel.tsx`                                               |
-| `README.md` advertises a "full-screen editing toggle"                                                                                                        | Only editor, split, and preview modes exist                                                               | `src/routes/workspace.tsx`, `mode`                                                     |
-| `README.md` describes an "AI-generated documents folder" fed automatically                                                                                   | `AI drafts` exists in the starter workspace but nothing writes to it                                      | `src/features/workspace/model.ts`                                                      |
-| `README.md` names the project "Markdown Meadow Workspace" and points at a hosted URL                                                                         | Package name is `tanstack_start_ts`; the app is self-hosted via TanStack Start                            | `package.json`                                                                         |
-| `docs/workspace-intelligence.md` cites a "21.1 MiB ONNX asset"                                                                                               | A build-artifact figure that cannot be confirmed from source; treat as stale                              | build output, not source                                                               |
-| `docs/workspace-intelligence.md` says rebuild and retry keep previous chunk data                                                                             | True of chunk rows, but the document state flips to `indexing` first, so the panel shows work in progress | `documentIndexer.ts`, `indexQueue.ts`                                                  |
+| Claim and where it appears                                                    | Actual behaviour                                                                                          | Evidence                              |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `docs/workspace-intelligence.md` cites a "21.1 MiB ONNX asset"                | A build-artifact figure that cannot be confirmed from source; treat as stale                              | build output, not source              |
+| `docs/workspace-intelligence.md` says rebuild and retry keep prior chunk data | True of chunk rows, but the document state flips to `indexing` first, so the panel shows work in progress | `documentIndexer.ts`, `indexQueue.ts` |
 
 ### Resolved in this pass
 
@@ -1041,7 +1031,9 @@ These were fixed in code rather than documented as defects:
 | Guided tour said appearance "is saved with this local workspace"                    | Says preferences are shared by every workspace in the browser                      |
 | Theme changes did not restyle an already-mounted editor                             | Theme is passed to `MarkdownEditor` and applied through a `Compartment`            |
 | `src/features/ai/usage/estimate.ts` was exported and tested but never called        | Deleted, along with its test, since estimates must never reach stored usage        |
-| `roadmap.md` omits known gaps                                                       | The remaining gap is the unused `ai-usage` `timestamp` index, listed above         |
+| The `ai-usage` `timestamp` index was created on a field that never existed          | DB version 4 drops it and adds `createdAt`; reads use the index instead of sorting |
+| `README.md` was the original build brief describing an unbuilt app                  | Rewritten as an accurate overview that defers to this document for detail          |
+| `noUnusedLocals` and `noUnusedParameters` were off                                  | Both enabled, which surfaced and removed three unused imports                      |
 
 ---
 
