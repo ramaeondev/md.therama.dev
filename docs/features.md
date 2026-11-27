@@ -924,8 +924,7 @@ Responses are deliberately **never compressed** in this layer, because the hosti
 gzip/brotli-encodes every response at the edge; compressing here as well would encode the
 body twice and render it garbled. `src/lib/error-capture.ts` keeps the last thrown error
 out of band for five seconds so `src/server.ts` can recover a stack after h3 has stripped
-it, and `src/lib/lovable-error-reporting.ts` forwards runtime errors to the optional
-`window.__lovableEvents` bridge when the host provides one.
+it, and the root error boundary reports the failure to the browser console.
 
 ---
 
@@ -1034,6 +1033,10 @@ These were fixed in code rather than documented as defects:
 | The `ai-usage` `timestamp` index was created on a field that never existed          | DB version 4 drops it and adds `createdAt`; reads use the index instead of sorting |
 | `README.md` was the original build brief describing an unbuilt app                  | Rewritten as an accurate overview that defers to this document for detail          |
 | `noUnusedLocals` and `noUnusedParameters` were off                                  | Both enabled, which surfaced and removed three unused imports                      |
+| The build config came from `@lovable.dev/vite-tanstack-config`                      | Replaced with a direct Vite config using first-party plugins                       |
+| `src/lib/lovable-error-reporting.ts` forwarded errors to a host-only bridge         | Deleted; the root error boundary logs to the console                               |
+| `__root.tsx` declared `author: Lovable` and `twitter:site: @Lovable`                | Both meta tags removed                                                             |
+| `.lovable/` metadata and the `AGENTS.md` Lovable block                              | Removed                                                                            |
 
 ---
 
