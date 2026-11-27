@@ -1,5 +1,11 @@
 # Markdown Meadow Workspace
 
+> **Note:** This file is the original build brief and no longer matches the shipped
+> application (it lists providers, storage behaviour, and UI controls that do not
+> exist). For an accurate, source-derived description of every feature, see
+> [`docs/features.md`](docs/features.md), which also records each specific
+> discrepancy under "Documentation drift".
+
 Build: Markdown AI Workspace – Foundation
 
 Build a modern, premium, developer-focused web application called Markdown AI Workspace.
